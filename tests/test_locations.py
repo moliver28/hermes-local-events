@@ -128,3 +128,37 @@ def test_seeding_scales_moods():
     hh = Household()
     seed_from_drive_histogram(hh, {"20": 30, "30": 20})
     assert hh.drive_tolerance["tired"] < hh.drive_tolerance["normal"] < hh.drive_tolerance["adventurous"]
+
+
+def test_downloads_candidates_scan(tmp_path, monkeypatch):
+    """Read-only Downloads scan: finds recent Takeout/Timeline files, skips
+    unrelated files and stale exports, never imports anything."""
+    from core.locations import find_recent_candidates
+
+    dl = tmp_path / "Downloads"
+    dl.mkdir()
+    monkeypatch.setenv("HERMES_EVENTS_DOWNLOADS", str(dl))
+
+    (dl / "takeout-20261001T120000Z-001.zip").write_bytes(b"PK\x03\x04")
+    (dl / "Timeline.json").write_text("{}", encoding="utf-8")
+    (dl / "vacation-photos.zip").write_bytes(b"PK\x03\x04")  # unrelated
+    stale = dl / "takeout-20250101T000000Z-001.zip"
+    stale.write_bytes(b"PK\x03\x04")
+    import os
+
+    old = (1031, 1)  # mtime 1999 — outside the 60-day window
+    os.utime(stale, old)
+
+    found = find_recent_candidates()
+    names = [f.name for f in found]
+    assert "takeout-20261001T120000Z-001.zip" in names
+    assert "Timeline.json" in names
+    assert "vacation-photos.zip" not in names
+    assert "takeout-20250101T000000Z-001.zip" not in names
+
+
+def test_downloads_scan_missing_dir(tmp_path, monkeypatch):
+    from core.locations import find_recent_candidates
+
+    monkeypatch.setenv("HERMES_EVENTS_DOWNLOADS", str(tmp_path / "nope"))
+    assert find_recent_candidates() == []

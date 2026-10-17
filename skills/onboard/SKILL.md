@@ -38,12 +38,26 @@ Tell the user: "I'll find local event sources for your area."
 
 ## 4. Google Timeline import (optional, opt-in — never infer)
 
-Offer: "If you use Google Maps, you can export your Timeline and I'll learn your real drive tolerance + find events you already attended."
+Offer: "If you use Google Maps, you can export your Timeline and I'll learn your real drive tolerance + find events you already attended. The export itself is a ~60-second manual step — Google doesn't allow apps to pull it — then I do everything else."
 
-1. User exports at takeout.google.com → Location History (or Android: Settings → Location → Timeline → Export).
-2. They drop the zip into the plugin's `imports` folder (tell them the path from the tool error) or pass a path.
-3. Run `events_import_locations {"path": "..."}` — present the summary (visits, median drive, home guess, matched events) in plain language and **ask before** `confirm=true`.
-4. Confirm applies: seeds drive tolerances from their actual driving, sets home (only with their OK), backfills attended events as high-weight positives, deletes the imported copy. Raw GPS never stored.
+### 4a. Help them export (be the navigator)
+
+Be upfront: **there is no Google API for this** (verified Oct 2026) — only the device export and the web Takeout flow. Offer the easiest path for their device, with exact clicks:
+
+- **Android (fastest):** Settings → Location → Location services → Timeline → **Export Timeline data** → save to Downloads / share it. On a PC sync, it lands in Downloads.
+- **iPhone:** Google Maps app → profile picture → Your data in Maps → Content → **Export timeline data** (goes through Takeout; arrives as a download).
+- **Desktop / full history:** takeout.google.com → "Deselect all" → tick **Location History (Timeline)** → All data included → Next → Export → download the zip when the email arrives.
+
+Then either of:
+- They say **"import my timeline"** with nothing more — run `events_import_locations {"path": "auto"}`: it checks the plugin's imports folder first, then **scans Downloads** for recent Takeout/Timeline files and lists candidates. Ask which one, re-run with its explicit path.
+- Or they drop the file into the plugin's `imports` folder (path shown in the tool error).
+
+Optional, only if this Hermes instance has a computer-use/browser tool: offer to drive the Takeout website *with the user present* — they do the login and 2FA themselves, Hermes does the clicking. Never ask for or handle their Google password.
+
+### 4b. Analyze, confirm, apply
+
+1. Run `events_import_locations {"path": "..."}` — present the summary (visits, median drive, home guess, matched events) in plain language and **ask before** `confirm=true`.
+2. Confirm applies: seeds drive tolerances from their actual driving, sets home (only with their OK), backfills attended events as high-weight positives, deletes the imported copy. Raw GPS never stored — say that sentence; it's why people say yes.
 
 ## 5. Finish
 

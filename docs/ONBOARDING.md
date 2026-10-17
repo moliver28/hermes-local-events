@@ -36,8 +36,10 @@ The `validate` action is SSRF-guarded (http/https only, host must resolve public
 
 **Why**: real drive tolerance from actual driving; location-confirmed attendance backfill; home confirmation; venue familiarity.
 
-1. User exports from **takeout.google.com → Location History** (or Android: Settings → Location → Timeline → Export).
-2. Drop the Takeout zip into the plugin's `imports` folder (path shown by the tool if run with no args), or pass any path/zip/file.
+**Programmatic status (verified Oct 2026)**: Google offers **no API** for Timeline export. The supported routes are the device export (Android: Settings → Location → Location services → Timeline → Export Timeline data; iPhone: Google Maps → Your data in Maps → Export) and the manual web flow (takeout.google.com → Location History (Timeline)). Hermes therefore acts as navigator for the ~60-second manual step, then automates everything downstream. If the host has a computer-use/browser tool, Hermes may drive the Takeout site *with the user present* (user performs login + 2FA; never handle their Google credentials).
+
+1. User exports via one of the routes above.
+2. They say "import my timeline" — `events_import_locations {"path": "auto"}` checks the plugin's `imports` folder first, then **scans Downloads read-only** for recent Takeout/Timeline files (`takeout-*.zip`, `Timeline*.json`, `Records.json`, semantic-history zips; ≤60 days old) and returns candidates. The user picks one; re-run with its explicit path. Downloads are never auto-imported — listing only, import requires an explicit chosen path. Alternatively drop any path/zip/file.
 3. `events_import_locations {"path": …}` — **analyze pass**: returns plain-language summary (visits, places, drives, median drive, home guess, matched events). Present it; get explicit OK.
 4. `events_import_locations {…, "confirm": true}` — applies:
    - drive histogram → tolerance curves (median → normal; tired 0.6×, adventurous 1.8×, escape 3.2×)
@@ -46,7 +48,7 @@ The `validate` action is SSRF-guarded (http/https only, host must resolve public
    - per-place visit counts → familiarity/novelty features
    - **deletes the imported copy**
 
-**Privacy invariants**: parsing streams through; only derived data persists (histogram, place counts, confirmed home). Raw GPS points are never written to disk. `events_forget_locations` wipes all derived location data. Zip extraction is zip-slip-guarded; import paths reject `..` traversal.
+**Privacy invariants**: parsing streams through; only derived data persists (histogram, place counts, confirmed home). Raw GPS points are never written to disk. The Downloads scan is name-based, recency-bounded, read-only. `events_forget_locations` wipes all derived location data. Zip extraction is zip-slip-guarded; import paths reject `..` traversal.
 
 ## Stage 5 — Automations + first digest
 

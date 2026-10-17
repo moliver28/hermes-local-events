@@ -69,7 +69,7 @@ Suitability is four-state — `verified_yes | verified_no | likely | unknown` �
 ## Privacy
 
 - All household data local (SQLite via Hermes plugin storage). The repo ships zero personal data.
-- Google Timeline import is **opt-in, explicit, derived-data-only**: home guess (you confirm), drive-distance histogram, per-place visit counts. Raw GPS points are never persisted; the imported file is deleted on confirm. `events_forget_locations` wipes it all.
+- Google Timeline import is **opt-in, explicit, derived-data-only**: home guess (you confirm), drive-distance histogram, per-place visit counts. Raw GPS points are never persisted; the imported file is deleted on confirm. `events_forget_locations` wipes it all. Google offers no export API (verified Oct 2026) — Hermes navigates the device/Takeout export, then automates everything after; its Downloads scan is read-only, name-based, recency-bounded, and never auto-imports.
 - Email is processed transiently — only extracted event fields persist.
 
 ## Sources (verified Oct 2026)

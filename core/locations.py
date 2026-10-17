@@ -71,6 +71,55 @@ def find_timeline_files(path: str | Path) -> list[Path]:
     return []
 
 
+# Names Google uses for Timeline exports: Android "Timeline(1).json"/zip,
+# Takeout "takeout-20260101T...-001.zip", Records.json, Semantic History zips.
+CANDIDATE_PATTERNS = (
+    "takeout-*.zip",
+    "takeout*.zip",
+    "Timeline*.json",
+    "Timeline*.zip",
+    "timeline*.json",
+    "Records.json",
+    "records.json",
+    "*semantic*location*.zip",
+    "*Semantic*.zip",
+)
+
+
+def downloads_dir() -> Path:
+    """The user's Downloads folder (overridable via HERMES_EVENTS_DOWNLOADS for tests)."""
+    import os
+
+    override = os.environ.get("HERMES_EVENTS_DOWNLOADS")
+    if override:
+        return Path(override)
+    return Path.home() / "Downloads"
+
+
+def find_recent_candidates(days: int = 60) -> list[Path]:
+    """Read-only scan of Downloads for likely Timeline/Takeout exports.
+
+    Never imports anything — the caller must present candidates and import an
+    explicitly chosen path. Consented, name-based, recency-bounded."""
+    d = downloads_dir()
+    if not d.is_dir():
+        return []
+    import time as _time
+
+    cutoff = _time.time() - days * 86400
+    seen: dict[Path, float] = {}
+    for pattern in CANDIDATE_PATTERNS:
+        for f in d.glob(pattern):
+            if f.is_file():
+                try:
+                    mtime = f.stat().st_mtime
+                except OSError:
+                    continue
+                if mtime >= cutoff:
+                    seen[f] = mtime
+    return [p for p, _ in sorted(seen.items(), key=lambda kv: -kv[1])[:10]]
+
+
 # -------------------------------------------------------------------- parsing
 
 

@@ -4,7 +4,7 @@ ALWAYS return a JSON string, NEVER raise. Thin adapters over the core engine."""
 from __future__ import annotations
 
 import json
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from core import digest as digest_mod
@@ -280,10 +280,42 @@ def events_import_locations(args: dict, rt=None, **kwargs) -> str:
     hh = _household(rt, store)
     path = args.get("path", "auto")
     if path in ("auto", ""):
-        path = rt.imports_dir
-        if not any(Path(path).iterdir()):
+        imports = rt.imports_dir
+        if any(Path(imports).iterdir()):
+            path = imports
+        else:
+            # Nothing dropped in imports — check Downloads for recent exports.
+            from core.locations import find_recent_candidates
+
+            candidates = find_recent_candidates()
+            if not candidates:
+                return json.dumps(
+                    {
+                        "ok": False,
+                        "error": (
+                            f"no export found. Drop your Takeout zip into {imports}, "
+                            "or export on your device (Android: Settings > Location > "
+                            "Location services > Timeline > Export) and save it to "
+                            "Downloads, then say 'import my timeline' again"
+                        ),
+                    }
+                )
             return json.dumps(
-                {"ok": False, "error": f"drop your Takeout zip into {path} (or pass an explicit path)"}
+                {
+                    "ok": True,
+                    "stage": "candidates",
+                    "candidates": [
+                        {
+                            "path": str(c),
+                            "name": c.name,
+                            "modified": datetime.fromtimestamp(c.stat().st_mtime).isoformat(
+                                timespec="minutes"
+                            ),
+                        }
+                        for c in candidates
+                    ],
+                    "next": "ask the user which one, then re-run with its explicit path",
+                }
             )
     try:
         analysis = locations_analyze(path, store)

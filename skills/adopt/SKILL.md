@@ -22,7 +22,7 @@ Goal: the household uses the full system because each feature arrived when it wa
 |---|---|---|
 | 1. Digest + 🔥/👌/✖ | day one (onboard ends here) | — |
 | 2. Calendar sync | after they say "looks good, let's do #1" twice | "want me to add picks straight to your calendar from now on? Attendance then confirms itself." |
-| 3. Google Timeline import | after ~2 weeks of feedback, or when they say "too far" a lot | "if you export your Google Timeline I can calibrate 'too far' from your actual driving — takes one zip drop, nothing raw is kept." |
+| 3. Google Timeline import | after ~2 weeks of feedback, or when they say "too far" a lot | "if you export your Google Timeline I can calibrate 'too far' from your actual driving — Android: Settings → Location → Location services → Timeline → Export, then just say 'import my timeline' (I'll find the file in Downloads). Nothing raw is kept." — then follow the onboard skill §4 navigator steps (no Google API exists; the export click is theirs) |
 | 4. Email mining | when they mention a newsletter, forward any event email, or buy tickets somewhere | (see find-events skill: receipt → automatic `went`) |
 | 5. Ticketmaster key | when their picks skew music/sports and they hit "no big events" | "big concerts/sports live on Ticketmaster — free key, takes 2 minutes: developer.ticketmaster.com → paste it in settings." |
 | 6. Escapes | before a 3-day weekend (blueprint fires), or "we should get out of town" | surface `energy=escape` picks with booking-lead flags; explain the dial's top end. |
