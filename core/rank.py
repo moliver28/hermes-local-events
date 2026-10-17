@@ -69,7 +69,9 @@ def is_eligible(ev: Event, venue: Venue | None, q: Query, hh: Household) -> tupl
         if ev.kid == Suitability.VERIFIED_YES and ev.audience != Audience.ALL_AGES:
             return False, "kid-targeted"
     else:
-        if q.strict_kid and ev.kid not in (Suitability.VERIFIED_YES, Suitability.LIKELY):
+        # Strict kid filter only applies when kids are actually declared
+        # (kid_ages empty = no kids filters, per plugin.yaml).
+        if q.strict_kid and hh.kid_ages and ev.kid not in (Suitability.VERIFIED_YES, Suitability.LIKELY):
             return False, f"kid={ev.kid.value}"
         if hh.kid_ages and ev.age_min and ev.age_min > min(hh.kid_ages):
             return False, f"age_min={ev.age_min}"

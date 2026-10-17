@@ -28,12 +28,20 @@ def test_cancelled_ineligible(store, mk_event):
 
 
 def test_strict_kid_excludes_unknown(store, mk_event):
+    """Kid-unknown passes a strict filter ONLY when no kids are declared
+    (kid_ages empty = no kid filters, per plugin.yaml). Declared kids ->
+    unknown never passes."""
     ev = mk_event(title="Mystery", kid="unknown")
-    hh = Household()
-    ok, reason = is_eligible(ev, None, _q(), hh)
+    hh_kids = Household(kid_ages=[6])
+    ok, reason = is_eligible(ev, None, _q(), hh_kids)
     assert not ok and "kid" in reason
-    ok2, _ = is_eligible(ev, None, _q(strict_kid=False), hh)
+    ok2, _ = is_eligible(ev, None, _q(strict_kid=False), hh_kids)
     assert ok2
+
+    # No kids declared: unknown kid-suitability is not an exclusion.
+    hh_none = Household()
+    ok3, _ = is_eligible(ev, None, _q(), hh_none)
+    assert ok3
 
 
 def test_adults_party_excludes_kid_verified(store, mk_event):
