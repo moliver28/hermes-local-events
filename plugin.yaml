@@ -94,6 +94,12 @@ config_schema:
     description: When true, unknown suitability is classified via Hermes LLM with evidence quotes. Rules-only when false.
     default: true
     required: false
+  - key: llm_rerank
+    type: boolean
+    label: Use LLM to reorder digest picks
+    description: One listwise LLM pass per digest reorders picks within each energy band and writes one-line reasons. Deterministic scoring is unchanged; fails closed to the scored order.
+    default: true
+    required: false
 
 python_dependencies:
   - pydantic>=2.7,<3

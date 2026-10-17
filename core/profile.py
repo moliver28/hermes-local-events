@@ -93,14 +93,38 @@ def facet_score(hh: Household, key: str) -> float:
 def update_momentum(hh: Household, category: str, positive: bool, when: datetime | None = None) -> None:
     when = when or datetime.now(UTC)
     key = f"mom:{category}"
-    lam = math.log(2) / MOMENTUM_HALFLIFE_DAYS
+    old = decayed_momentum(hh, category, when)
+    hh.category_momentum[key] = old + (0.2 if positive else -0.15)
+    hh.category_momentum_ts[key] = when.isoformat()
+
+
+def decayed_momentum(hh: Household, category: str, when: datetime | None = None) -> float:
+    """Momentum for a category decayed to `when` at the 60-day halflife.
+    Entries without timestamps (pre-decay-clock data) pass through undecayed."""
+    when = when or datetime.now(UTC)
+    key = f"mom:{category}"
     old = hh.category_momentum.get(key, 0.0)
-    decayed = old * math.exp(-lam * 30.0 / 30.0)  # per-update decay ≈ gentle
-    hh.category_momentum[key] = decayed + (0.2 if positive else -0.15)
+    ts = hh.category_momentum_ts.get(key)
+    if old and ts:
+        try:
+            elapsed = max(0.0, (when - datetime.fromisoformat(ts)).total_seconds() / 86400.0)
+        except ValueError:
+            return old
+        old *= math.exp(-(math.log(2) / MOMENTUM_HALFLIFE_DAYS) * elapsed)
+    return old
 
 
 def momentum_for(hh: Household, category: str) -> float:
-    return max(-1.0, min(1.0, hh.category_momentum.get(f"mom:{category}", 0.0)))
+    return max(-1.0, min(1.0, decayed_momentum(hh, category)))
+
+
+def thompson_sample(hh: Household, keys: list[str], rng) -> float:
+    """One posterior draw per facet, averaged — the exploration analogue of
+    facet_score's lower-bound mean. rng is a random.Random instance."""
+    if not keys:
+        return rng.betavariate(ALPHA0, BETA0)
+    draws = [rng.betavariate(hh.facet_alpha.get(k, ALPHA0), hh.facet_beta.get(k, BETA0)) for k in keys]
+    return sum(draws) / len(draws)
 
 
 # ----------------------------------------------------------- tolerance curves

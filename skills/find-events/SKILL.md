@@ -9,9 +9,10 @@ description: How to answer event questions and deliver digests with the local-ev
 
 1. **Effort/energy is the primary axis.** Map mood words into `events_search`: "wiped/exhausted/lazy/low-key" → `energy=tired`; default `normal`; "adventure/hike/big day" → `adventurous`; "weekend trip/getaway" → `escape` (+ `days_ahead: 35`).
 2. **Party mode.** "date night / out with friends / no kids" → `events_search party=adults`. Family queries keep kid+dog filters on.
-3. **Honesty beats hedging.** Never say "your dog can come" unless `dog=verified_yes`. If `unknown`, say "dog policy not stated — assume no." Suitability states: verified_yes / likely / unknown / verified_no. Unknown never silently passes a filter; mention the excluded-unknown count when relevant.
-4. **Lead with the plan, not a catalog.** For "what's this weekend": run `events_refresh` (if stale) then `events_digest`, deliver the digest text nearly verbatim — it's shaped (anchors per energy band, alternates, whitespace, rain swaps, numbered picks). Don't append a 20-event list.
-5. **Whitespace is a feature.** Never propose filling every day. If the user asks for more, add at most 2 alternates.
+3. **More like that one.** "something like #2" → `events_search like=#2` (semantic similarity; needs the optional `model2vec` extra — if it errors, say so and fall back to same-category search). Results may include one event marked `wildcard: true` — that's deliberate exploration from rank 4+; present it as "a wildcard pick" and let them dismiss it cheaply.
+4. **Honesty beats hedging.** Never say "your dog can come" unless `dog=verified_yes`. If `unknown`, say "dog policy not stated — assume no." Suitability states: verified_yes / likely / unknown / verified_no. Unknown never silently passes a filter; mention the excluded-unknown count when relevant.
+5. **Lead with the plan, not a catalog.** For "what's this weekend": run `events_refresh` (if stale) then `events_digest`, deliver the digest text nearly verbatim — it's shaped (anchors per energy band, alternates, whitespace, rain swaps, numbered picks). Don't append a 20-event list.
+6. **Whitespace is a feature.** Never propose filling every day. If the user asks for more, add at most 2 alternates.
 
 ## Feedback capture (this is how it learns)
 

@@ -21,19 +21,19 @@ Rank local events by **P(family attends & is glad they went)** — not clicks, n
 | Point-in-time correctness | Freshness from `first_seen`; volatile refresh by cadence per source |
 | Location-confirmed attendance (consented) | Google Timeline import: venue-visit overlap ±90 min → high-weight positive |
 | Group/family modeling with vetoes | Household = declared party; kid `verified_no` and dog `verified_no` are hard vetoes |
-| Explanations from audited contributions, max 3 reasons | `reasons` list per pick ("matches your patterns · 18-min drive · dogs ok (verified)") |
-| Guardrails on exploration | Digest = pure exploit (posterior lower bound); one labeled Thompson wildcard in search only |
+| Explanations from audited contributions, max 3 reasons | `reasons` list per pick from score components ("matches your patterns · venue you've never tried · dogs ok (verified)") |
+| Guardrails on exploration | Digest = pure exploit (posterior lower bound); one labeled Thompson wildcard in search only (seeded per day, rank 4+) |
 
 ## What we dropped (and why)
 
 | Dropped | Why |
 |---|---|
-| Two-stage retrieval + ANN indexes | ≤2k live events; SQLite FTS5 + Python cosine is the right tool |
+| Two-stage retrieval + ANN indexes | ≤2k live events; SQLite FTS5 + Python cosine is the right tool (optional model2vec embeddings reuse the same brute-force cosine) |
 | LambdaMART / learning-to-rank | 5–50 labels/month cannot train it; Beta-Binomial posteriors improve from day one |
 | IPS / debiasing / propensity logs | No randomized serving; would be decoration |
 | Probability calibration claims | Posterior lower bounds only — ordinal, honest, shrinkage-native |
 | Learned seasonality / burst detection | School calendar + festival season are hard-coded; trends mined from catalog supply instead |
-| Holdout splits / offline replay | A holdout at this volume doubles time-to-signal with zero statistical power |
+| Holdout splits / OPE libraries | Zero statistical power at this volume; the journal replay (`cli.py replay`) is an explicit weight-regression check with its served-events bias stated, not an unbiased estimate |
 
 ## Interfaces
 
@@ -45,7 +45,8 @@ Rank local events by **P(family attends & is glad they went)** — not clicks, n
 ## Non-functional
 
 - Fully offline-capable core; network only for refresh, geocoding (cached), travel-time (cached), weather.
-- No LLM required: rules-only fallback produces `unknown` states honestly.
+- No LLM required: rules-only fallback produces `unknown` states honestly (`llm_suitability=false`, `llm_rerank=false`).
+- Optional extras: `pip install "hermes-local-events[embeddings]"` (model2vec) enables semantic "more like this" search and similarity-aware slate diversity; absent, behavior is unchanged.
 - Polite scraping: per-source cadence, UA, robots-respect intent, recorded-fixture tests (CI never hits the network).
 - Local-first privacy: household data only in plugin storage; derived-only location import; transient email.
 

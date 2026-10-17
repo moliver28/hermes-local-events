@@ -15,7 +15,7 @@ from core.locations import analyze as locations_analyze
 from core.locations import apply_import, cleanup_imported_files
 from core.models import Energy, Household, Party, now_utc
 from core.net import safe_probe
-from core.rank import Query, rank
+from core.rank import Query, rank, wildcard_pick
 from core.runtime import home_coord
 from core.share import invite_card
 from core.store import Store
@@ -112,14 +112,45 @@ def events_search(args: dict, rt=None, **kwargs) -> str:
         max_results=int(args.get("max_results", 10)),
     )
     events = store.events_between(q.start.isoformat(), q.end.isoformat())
+    like_title = None
+    if args.get("like"):
+        src_id = _resolve_ref(store, rt, str(args["like"]))
+        src = store.get_event(src_id) if src_id else None
+        src_vec = None
+        if src and src.embedding:
+            from core.store import _blob_to_vec
+
+            src_vec = _blob_to_vec(src.embedding)
+        if not src_vec:
+            return json.dumps(
+                {
+                    "ok": False,
+                    "error": "no embedding for that event — the optional embeddings extra "
+                    "(pip install model2vec) isn't installed or the store hasn't been "
+                    "refreshed since; run events_refresh after installing",
+                }
+            )
+        order: dict[str, int] = {}
+        for i, (ev, _cos) in enumerate(store.cosine_neighbors(src_vec, limit=60)):
+            if ev.id != src.id:
+                order[ev.id] = i
+        events = sorted((e for e in events if e.id in order), key=lambda e: order[e.id])
+        like_title = src.title
     if q.text:
         fts = {e.id for e in store.search_text(q.text)}
         events = [e for e in events if e.id in fts] or store.search_text(q.text)
     scored = rank(events, q, hh, store)
+    # One labeled exploration slot per search: a Thompson-sampled pick from rank 4+.
+    wildcard = wildcard_pick(scored, hh, seed=q.start.date().isoformat())
+    results = scored[: q.max_results]
+    if wildcard is not None and all(s.event.id != wildcard.event.id for s in results):
+        if len(results) < q.max_results:
+            results.append(wildcard)
     out = []
-    for s in scored[: q.max_results]:
+    for s in results:
         from core.effort import effort_summary
 
+        why = (["similar to “" + like_title + "”"] if like_title else []) + s.reasons
         out.append(
             {
                 "id": s.event.id,
@@ -132,7 +163,8 @@ def events_search(args: dict, rt=None, **kwargs) -> str:
                 "dog": s.event.dog.value,
                 "audience": s.event.audience.value,
                 "score": round(s.score, 3),
-                "why": s.reasons,
+                "wildcard": s is wildcard,
+                "why": why,
             }
         )
     unknown_kid = sum(1 for e in events if e.kid.value == "unknown")
@@ -153,7 +185,12 @@ def events_digest(args: dict, rt=None, **kwargs) -> str:
     store = _store(rt)
     hh = _household(rt, store)
     party = Party(args.get("party", "family"))
-    result = digest_mod.build_digest(hh, store, party=party)
+    llm = None
+    if rt.get_setting("llm_rerank", True):
+        from core.llm import make_llm_fn
+
+        llm = make_llm_fn(rt)
+    result = digest_mod.build_digest(hh, store, party=party, llm=llm)
     store.kv_set("last_digest_picks", json.dumps(result["picks"]))
     store.kv_set("last_digest_at", now_utc().isoformat())
     return json.dumps({"ok": True, **result})

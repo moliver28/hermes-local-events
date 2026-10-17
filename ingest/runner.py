@@ -110,6 +110,10 @@ def refresh(
 
     merged = dedupe(collected)
     new_count = 0
+    from core import embed as embed_mod
+    from core.store import vec_to_blob
+
+    embeddable = embed_mod.available()
     for ev in merged:
         existing = store.events_by_source_ids(ev.source_id, ev.source_event_id)
         if existing:
@@ -118,6 +122,11 @@ def refresh(
                 ev.start = existing[0].start
         else:
             new_count += 1
+        if embeddable and ev.embedding is None:
+            venue = store.get_venue(ev.venue_id) if ev.venue_id else None
+            vec = embed_mod.event_embedding(ev, venue)
+            if vec:
+                ev.embedding = vec_to_blob(vec)
         store.upsert_event(ev)
     import json as _json
 

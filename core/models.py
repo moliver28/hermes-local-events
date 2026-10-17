@@ -175,3 +175,5 @@ class Household(BaseModel):
     facet_alpha: dict[str, float] = Field(default_factory=dict)
     facet_beta: dict[str, float] = Field(default_factory=dict)
     category_momentum: dict[str, float] = Field(default_factory=dict)
+    # ISO timestamps parallel to category_momentum keys; decay is by elapsed time
+    category_momentum_ts: dict[str, str] = Field(default_factory=dict)

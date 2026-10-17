@@ -28,6 +28,13 @@ SCHEMAS = {
             "type": "object",
             "properties": {
                 "query": {"type": "string", "description": "Free text (optional)."},
+                "like": {
+                    "type": "string",
+                    "description": (
+                        "Event id or digest pick number — return events most similar to it "
+                        "(semantic; requires the optional model2vec extra)."
+                    ),
+                },
                 "days_ahead": {"type": "number", "description": "Look-ahead window in days (default 7)."},
                 "energy": {
                     "type": "string",

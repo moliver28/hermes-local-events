@@ -58,8 +58,12 @@ python cli.py stats
 
 - **Beta-Binomial facet posteriors** (~100 lines of stdlib math) over category, venue, organizer, effort band, price band, time slot. `went` weighs 2, `interested` 1, negatives 1. Scores shrink to the prior below ~5 observations — no overfitting at family scale.
 - **Tolerance curves per mood** (logistic acceptance over drive/duration) — tightened by "too far / too much", loosened by attendance past the center, and **seeded from your actual Google Timeline driving** if you opt in.
+- **Category momentum** decays with a 60-day halflife on real elapsed time — what you loved last summer fades honestly.
 - Trends are mined from the **event catalog** (supply, one-off vs recurring, organizer track record), not your sparse feedback log.
-- The digest is pure exploitation; exploration is one labeled wildcard in search only.
+- The digest is pure exploitation; exploration is one labeled wildcard in search only, chosen by a Thompson draw over the facet posteriors (rank 4+, labeled "wildcard", deterministic per day). An optional LLM pass (`llm_rerank`, on by default) reorders digest picks **within** each energy band and writes the one-line reasons — it can never add, drop, or move picks across bands, and fails closed to the scored order.
+- Every pick shows its score components (preference / effort fit / freshness / novelty) — the scorer is its own explanation.
+- Optional `pip install "hermes-local-events[embeddings]"` adds semantic "more like this" search and similarity-aware slate diversity (model2vec, ~8 MB); without it everything runs unchanged.
+- `python cli.py replay` re-scores your feedback journal to regression-check weight changes (served-events-only bias, stated plainly).
 - Guardrail: dismiss rate > 15% alarms; weekly LLM-label audit detects prompt drift.
 
 ## Honesty rules

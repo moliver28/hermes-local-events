@@ -8,6 +8,7 @@ python cli.py feedback <event_ref> <signal> [--effort right_effort|too_much|too_
 python cli.py ics <event_id> [<event_id> ...]
 python cli.py import-locations <path> [--confirm]
 python cli.py sources [--validate URL]
+python cli.py replay [--weights-a JSON] [--weights-b JSON]
 python cli.py stats
 """
 
@@ -56,6 +57,12 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("sources")
     p.add_argument("--validate", dest="url")
 
+    p = sub.add_parser("replay")
+    p.add_argument(
+        "--weights-a", default='{"pref": 0.50, "effort_fit": 0.30, "freshness": 0.10, "novelty": 0.10}'
+    )
+    p.add_argument("--weights-b", dest="weights_b")
+
     sub.add_parser("stats")
 
     args = parser.parse_args(argv)
@@ -97,6 +104,20 @@ def main(argv: list[str] | None = None) -> int:
         out = HANDLERS["events_sources"](
             {"action": "validate", "url": args.url} if args.url else {"action": "list"}, rt=rt
         )
+    elif args.cmd == "replay":
+        from core import eval as eval_mod
+        from core.store import Store
+        from tools import _household
+
+        store = Store(rt.db_path)
+        hh = _household(rt, store)
+        try:
+            wa = json.loads(args.weights_a)
+            wb = json.loads(args.weights_b) if args.weights_b else None
+        except json.JSONDecodeError as exc:
+            print(f"weights must be JSON: {exc}")
+            return 1
+        out = json.dumps(eval_mod.replay(store, hh, wa, wb), indent=2)
     else:
         from core import feedback as fb
         from core.store import Store

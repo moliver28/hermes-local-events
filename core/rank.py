@@ -6,6 +6,7 @@ fixed λ and hard caps per venue/organizer/day keeps slates from collapsing."""
 
 from __future__ import annotations
 
+import random
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -41,7 +42,6 @@ class Query:
     free_only: bool = False
     text: str = ""
     home: tuple[float, float] | None = None
-    include_unknown_effort: bool = False
 
 
 @dataclass
@@ -53,6 +53,7 @@ class Scored:
     pref: float
     effort_fit: float
     reasons: list[str] = field(default_factory=list)
+    components: dict = field(default_factory=dict)
 
 
 def is_eligible(ev: Event, venue: Venue | None, q: Query, hh: Household) -> tuple[bool, str]:
@@ -77,10 +78,10 @@ def is_eligible(ev: Event, venue: Venue | None, q: Query, hh: Household) -> tupl
             return False, "no dogs"
     preset = _preset(hh, q.energy)
     if venue and venue.lat is not None and q.home:
-        from .geo import haversine_km
+        from .geo import estimate_drive_minutes, haversine_km
 
-        km = haversine_km(*q.home, (venue.lat, venue.lon))
-        mins = P.accept_drive(hh, q.energy.value, km * 2.2)  # rough prefilter
+        km = haversine_km(q.home[0], q.home[1], venue.lat, venue.lon)
+        mins = P.accept_drive(hh, q.energy.value, estimate_drive_minutes(km))  # rough prefilter
         if mins < 0.02:
             return False, "beyond drive tolerance"
     if preset.get("max_intensity") is not None and ev.effort.physical_intensity is not None:
@@ -104,7 +105,9 @@ def score_event(
     q: Query,
     hh: Household,
     seen_categories: int = 0,
+    weights: dict | None = None,
 ) -> Scored:
+    w = weights or WEIGHTS
     keys = P.facet_keys(ev, computed.effort_band, P.price_band_for(ev), P.timeslot_for(ev))
     if keys:
         prefs = [P.facet_score(hh, k) for k in keys]
@@ -135,7 +138,7 @@ def score_event(
         age_days = (now_utc() - datetime.fromisoformat(ev.first_seen)).days
         freshness = max(0.0, 1.0 - age_days / FRESH_DAYS)
 
-    novel = 1.0 if (venue and venue.visit_count == 0 and ev.organizer == "") else 0.0
+    novel = 1.0 if (venue and venue.visit_count == 0) else 0.0
     novel += 0.5 if seen_categories == 0 else 0.0
 
     unknown_pen = 0.0
@@ -147,13 +150,22 @@ def score_event(
         unknown_pen = 0.15
 
     score = (
-        WEIGHTS["pref"] * pref
-        + WEIGHTS["effort_fit"] * effort_fit
-        + WEIGHTS["freshness"] * freshness
-        + WEIGHTS["novelty"] * min(1.0, novel)
+        w["pref"] * pref
+        + w["effort_fit"] * effort_fit
+        + w["freshness"] * freshness
+        + w["novelty"] * min(1.0, novel)
         - unknown_pen
     )
-    reasons = _reasons(ev, venue, computed, pref, drive_fit)
+    reasons = _reasons(ev, venue, computed, pref, freshness, min(1.0, novel))
+    components = {
+        "pref": round(pref, 3),
+        "effort_fit": round(effort_fit, 3),
+        "freshness": round(freshness, 3),
+        "novelty": round(min(1.0, novel), 3),
+        "unknown_pen": unknown_pen,
+        "drive_minutes": round(computed.drive_minutes, 0) if computed.drive_minutes is not None else None,
+        "effort_band": computed.effort_band,
+    }
     return Scored(
         event=ev,
         venue=venue,
@@ -162,6 +174,7 @@ def score_event(
         pref=pref,
         effort_fit=effort_fit,
         reasons=reasons,
+        components=components,
     )
 
 
@@ -170,11 +183,20 @@ def energy_is_low(energy: Energy) -> bool:
 
 
 def _reasons(
-    ev: Event, venue: Venue | None, computed: EffortComputed, pref: float, drive_fit: float
+    ev: Event,
+    venue: Venue | None,
+    computed: EffortComputed,
+    pref: float,
+    freshness: float,
+    novelty: float,
 ) -> list[str]:
     out = []
     if pref > 0.62:
         out.append("matches your patterns")
+    if novelty >= 0.9:
+        out.append("venue you've never tried" if venue and venue.visit_count == 0 else "new category for you")
+    if freshness >= 0.9:
+        out.append("just added")
     if computed.drive_minutes is not None:
         out.append(f"{computed.drive_minutes:.0f}-min drive")
     if ev.kid == Suitability.VERIFIED_YES:
@@ -253,9 +275,53 @@ def _sim(a: Scored, b: Scored) -> float:
         return 0.9
     if a.event.organizer and a.event.organizer == b.event.organizer:
         return 0.8
+    sem = _semantic_sim(a, b)
+    if sem >= SEMANTIC_SIM_LEVEL:
+        return 0.6
     same_day = a.event.start and b.event.start and a.event.start.date() == b.event.start.date()
     if a.event.category == b.event.category and same_day:
         return 0.5
     if same_day:
         return 0.3
     return 0.0
+
+
+SEMANTIC_SIM_LEVEL = 0.85
+
+
+def _semantic_sim(a: Scored, b: Scored) -> float:
+    """Cosine over stored event embeddings (populated only when the optional
+    model2vec extra is installed; 0.0 otherwise — behavior unchanged)."""
+    if not (a.event.embedding and b.event.embedding):
+        return 0.0
+    from .store import _blob_to_vec, _cosine
+
+    va, vb = _blob_to_vec(a.event.embedding), _blob_to_vec(b.event.embedding)
+    if not va or not vb:
+        return 0.0
+    return _cosine(va, vb)
+
+
+WILDCARD_TOP = 3
+
+
+def wildcard_pick(scored: list[Scored], hh: Household, seed: str) -> Scored | None:
+    """The one labeled exploration slot, ranked 4+ so it never displaces the
+    honest top-3. Selection is a Thompson draw over the facet posteriors
+    (instead of the lower bound), so high-uncertainty options sometimes win.
+    Search only — the digest never calls this."""
+    if len(scored) <= WILDCARD_TOP:
+        return None
+    rng = random.Random(seed)
+    best, best_draw = None, -1.0
+    for s in scored[WILDCARD_TOP:]:
+        keys = P.facet_keys(
+            s.event, s.computed.effort_band, P.price_band_for(s.event), P.timeslot_for(s.event)
+        )
+        draw = P.thompson_sample(hh, keys, rng) + 0.08 * P.momentum_for(hh, s.event.category)
+        if draw > best_draw:
+            best, best_draw = s, draw
+    if best is None:
+        return None
+    best.reasons = ["wildcard — exploring outside your usual", *best.reasons][:3]
+    return best

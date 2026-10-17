@@ -6,11 +6,13 @@ numbered list so feedback is one line ("went to #2 🔥")."""
 
 from __future__ import annotations
 
+import random
 from datetime import datetime, timedelta
 
 from .effort import effort_summary
 from .models import Energy, Event, Household, Party, Suitability, now_utc
 from .rank import Query, Scored, rank, select_slate
+from .rerank import rerank_slate
 from .store import Store
 
 BAND_SECTIONS = [
@@ -55,6 +57,7 @@ def build_digest(
     party: Party = Party.FAMILY,
     anchors_per_band: int = 1,
     alternates: int = 2,
+    llm=None,
 ) -> dict:
     now = now or now_utc()
     start, end = window or digest_window(now)
@@ -63,7 +66,10 @@ def build_digest(
         q = Query(start=start, end=end, party=party, energy=Energy.NORMAL, strict_kid=False, max_results=60)
         scored = rank(events, q, hh, store)
         slate = select_slate(scored, k=3 + alternates, per_day_cap=1)
-        return _render({"adults": slate}, hh, start, end, now, excluded=scored, party=party)
+        sections = {"adults": slate}
+        if llm is not None:
+            sections = rerank_slate(sections, llm, random.Random(start.date().isoformat()))
+        return _render(sections, hh, start, end, now, excluded=scored, party=party)
 
     sections: dict[str, list[Scored]] = {}
     all_scored: list[Scored] = []
@@ -80,6 +86,11 @@ def build_digest(
     picked = {s.event.id for sl in sections.values() for s in sl}
     rest = [s for s in sorted(all_scored, key=lambda x: -x.score) if s.event.id not in picked]
     sections["↔ Alternates"] = rest[:alternates]
+
+    # Optional LLM pass: reorders picks within each section only (never across
+    # bands, never adds/drops). Still pure exploitation — no exploration here.
+    if llm is not None:
+        sections = rerank_slate(sections, llm, random.Random(start.date().isoformat()))
 
     unknown_kid = sum(1 for e in events if e.kid == Suitability.UNKNOWN)
     return _render(sections, hh, start, end, now, excluded_unknown=unknown_kid, party=party)
