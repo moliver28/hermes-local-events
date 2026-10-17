@@ -47,6 +47,10 @@ When `events_refresh` reports a source error (403/429/bot wall/JS shell), don't 
 
 `energy=escape` widens the radius (~150 mi, Olympic Peninsula / Rainier / coast scale) and flags booking lead time ("book lodging by X"). Only surface proactively ahead of 3-day weekends (blueprint does this) or when asked.
 
+## Money (`events_budget`)
+
+Cost is first-class like effort: every pick shows per-person price and the party total (kid discounts applied). Mood sets the budget — tired ≈ 0.6×, normal 1×, adventurous ≈ 1.8×, escape ≈ 3× the household baseline — and the last two weeks of attended outings rescale it (splurgy stretch → leaner picks; frugal stretch → room for a treat). "how much are we spending?" / "what's our budget?" → `events_budget` (no args). "keep it under $40" → `events_search max_total=40` (price-unknown events are excluded under a cap). "too pricey" feedback tightens that mood's budget; attending something over budget loosens it halfway.
+
 ## Failure recovery (trust repair)
 
 - Event cancelled/wrong: acknowledge plainly, `signal=dismissed`, correct in next digest.

@@ -25,7 +25,7 @@ from .models import (
 )
 from .store import Store
 
-WEIGHTS = {"pref": 0.50, "effort_fit": 0.30, "freshness": 0.10, "novelty": 0.10}
+WEIGHTS = {"pref": 0.45, "effort_fit": 0.25, "freshness": 0.10, "novelty": 0.10, "cost_fit": 0.10}
 MMR_LAMBDA = 0.30
 FRESH_DAYS = 14.0
 
@@ -42,6 +42,8 @@ class Query:
     free_only: bool = False
     text: str = ""
     home: tuple[float, float] | None = None
+    max_total: float | None = None  # hard party-total cap; price-unknown fails it
+    budget: float | None = None  # explicit per-query budget center (overrides mood budget)
 
 
 @dataclass
@@ -63,6 +65,12 @@ def is_eligible(ev: Event, venue: Venue | None, q: Query, hh: Household) -> tupl
         return False, "outside window"
     if q.free_only and not (ev.is_free or (ev.price_min or 0) == 0):
         return False, "not free"
+    if q.max_total is not None:
+        from .cost import breakdown as cost_breakdown
+
+        cb = cost_breakdown(ev, hh, q.party)
+        if not (cb.known and (cb.total or 0.0) <= q.max_total):
+            return False, "over budget cap"
     if q.party == Party.ADULTS:
         # kid-targeted events (verified kid-yes, not explicitly neutral all-ages)
         # don't belong on a date-night/adults search
@@ -108,8 +116,9 @@ def score_event(
     hh: Household,
     seen_categories: int = 0,
     weights: dict | None = None,
+    trend_factor: float = 1.0,
 ) -> Scored:
-    w = weights or WEIGHTS
+    w = {**WEIGHTS, **(weights or {})}
     keys = P.facet_keys(ev, computed.effort_band, P.price_band_for(ev), P.timeslot_for(ev))
     if keys:
         prefs = [P.facet_score(hh, k) for k in keys]
@@ -143,6 +152,18 @@ def score_event(
     novel = 1.0 if (venue and venue.visit_count == 0) else 0.0
     novel += 0.5 if seen_categories == 0 else 0.0
 
+    from .cost import accept_cost, effective_budget
+    from .cost import breakdown as cost_breakdown
+
+    cb = cost_breakdown(ev, hh, q.party)
+    mood = q.energy.value
+    if cb.known and cb.total is not None:
+        center = q.budget if q.budget is not None else effective_budget(hh, mood, trend_factor)
+        cost_fit = accept_cost(hh, mood, cb.total, factor=trend_factor, center=q.budget)
+    else:
+        center = q.budget if q.budget is not None else effective_budget(hh, mood, trend_factor)
+        cost_fit = 0.5  # price unknown — neutral, never reads as free
+
     unknown_pen = 0.0
     if (
         ev.kid == Suitability.UNKNOWN
@@ -156,14 +177,21 @@ def score_event(
         + w["effort_fit"] * effort_fit
         + w["freshness"] * freshness
         + w["novelty"] * min(1.0, novel)
+        + w["cost_fit"] * cost_fit
         - unknown_pen
     )
-    reasons = _reasons(ev, venue, computed, pref, freshness, min(1.0, novel))
+    reasons = _reasons(ev, venue, computed, pref, freshness, min(1.0, novel), cb, center, cost_fit)
     components = {
         "pref": round(pref, 3),
         "effort_fit": round(effort_fit, 3),
         "freshness": round(freshness, 3),
         "novelty": round(min(1.0, novel), 3),
+        "cost_fit": round(cost_fit, 3),
+        "cost_total": cb.total,
+        "cost_per_person": cb.per_person,
+        "cost_known": cb.known,
+        "budget_effective": round(center, 2),
+        "trend_factor": trend_factor,
         "unknown_pen": unknown_pen,
         "drive_minutes": round(computed.drive_minutes, 0) if computed.drive_minutes is not None else None,
         "effort_band": computed.effort_band,
@@ -191,8 +219,18 @@ def _reasons(
     pref: float,
     freshness: float,
     novelty: float,
+    cb=None,
+    budget_center: float | None = None,
+    cost_fit: float | None = None,
 ) -> list[str]:
     out = []
+    # budget trouble leads; pleasant cost news goes last
+    if cost_fit is not None and cost_fit < 0.35 and cb is not None and cb.known and not cb.is_free:
+        out.append(
+            f"over your ~${budget_center:g} budget (~${cb.total:g} for the party)"
+            if budget_center
+            else f"~${cb.total:g} for the party"
+        )
     if pref > 0.62:
         out.append("matches your patterns")
     if novelty >= 0.9:
@@ -209,12 +247,19 @@ def _reasons(
         out.append("adults-only (verified)")
     if ev.effort.indoor_outdoor == "outdoor":
         out.append("outdoor — check rain swap")
+    if cb is not None and cb.is_free:
+        out.append("free")
+    elif cost_fit is not None and cost_fit > 0.85 and cb is not None and cb.known:
+        out.append("easy on the budget")
     return out[:3]
 
 
 def rank(events: list[Event], q: Query, hh: Household, store: Store) -> list[Scored]:
     eligible: list[Scored] = []
     seen_cats: dict[str, int] = {}
+    from .cost import trend as spend_trend
+
+    trend_factor = spend_trend(store, hh)["factor"]
     for ev in events:
         venue = store.get_venue(ev.venue_id) if ev.venue_id else None
         ok, _ = is_eligible(ev, venue, q, hh)
@@ -230,7 +275,15 @@ def rank(events: list[Event], q: Query, hh: Household, store: Store) -> list[Sco
             drive_min, drive_state = _dm(q.home, (venue.lat, venue.lon))
             drive_state = EffortState(drive_state)
         computed = effort_score(ev, hh, venue, drive_min, drive_state, now_utc())
-        s = score_event(ev, venue, computed, q, hh, seen_categories=seen_cats.get(ev.category, 0))
+        s = score_event(
+            ev,
+            venue,
+            computed,
+            q,
+            hh,
+            seen_categories=seen_cats.get(ev.category, 0),
+            trend_factor=trend_factor,
+        )
         seen_cats[ev.category] = seen_cats.get(ev.category, 0) + 1
         eligible.append(s)
     eligible.sort(key=lambda s: -s.score)
@@ -249,7 +302,9 @@ def _annotate_flaky_organizers(scored: list[Scored], store: Store) -> None:
     if not flaky:
         return
     for s in scored:
-        if s.event.organizer in flaky and len(s.reasons) < 3:
+        if s.event.organizer in flaky and "organizer has cancellations — double-check" not in s.reasons:
+            if len(s.reasons) >= 3:
+                s.reasons.pop()  # honesty warning displaces a cosmetic reason
             s.reasons.append("organizer has cancellations — double-check")
 
 

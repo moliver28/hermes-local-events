@@ -9,6 +9,7 @@ from __future__ import annotations
 import random
 from datetime import datetime, timedelta
 
+from .cost import trend as spend_trend
 from .effort import effort_summary
 from .geo import conditions_line as conditions_line_of
 from .models import Energy, Event, Household, Party, Suitability, now_utc
@@ -66,6 +67,7 @@ def build_digest(
     now = now or now_utc()
     start, end = window or digest_window(now)
     events = store.events_between(start.isoformat(), end.isoformat())
+    trend = spend_trend(store, hh)
     if party == Party.ADULTS:
         q = Query(start=start, end=end, party=party, energy=Energy.NORMAL, strict_kid=False, max_results=60)
         scored = rank(events, q, hh, store)
@@ -74,7 +76,15 @@ def build_digest(
         if llm is not None:
             sections = rerank_slate(sections, llm, random.Random(start.date().isoformat()))
         return _render(
-            sections, hh, start, end, now, excluded=scored, party=party, conditions_fn=conditions_fn
+            sections,
+            hh,
+            start,
+            end,
+            now,
+            excluded=scored,
+            party=party,
+            conditions_fn=conditions_fn,
+            trend=trend,
         )
 
     sections: dict[str, list[Scored]] = {}
@@ -100,7 +110,15 @@ def build_digest(
 
     unknown_kid = sum(1 for e in events if e.kid == Suitability.UNKNOWN)
     return _render(
-        sections, hh, start, end, now, excluded_unknown=unknown_kid, party=party, conditions_fn=conditions_fn
+        sections,
+        hh,
+        start,
+        end,
+        now,
+        excluded_unknown=unknown_kid,
+        party=party,
+        conditions_fn=conditions_fn,
+        trend=trend,
     )
 
 
@@ -114,13 +132,24 @@ def _render(
     excluded_unknown: int = 0,
     party: Party = Party.FAMILY,
     conditions_fn=None,
+    trend: dict | None = None,
 ) -> dict:
     lines = [
         f"📅 **Weekend plan — {start:%a %b %d}–{end:%a %b %d}**",
         "",
         "_One anchor per day; the rest is open on purpose._",
-        "",
     ]
+    if trend and trend.get("outings"):
+        avg = trend["avg_per_outing"]
+        base = trend["baseline"]
+        if trend["factor"] < 0.9:
+            mood_line = f"recent outings ran ~${avg:g} of your ${base:g} norm — keeping picks lean"
+        elif trend["factor"] > 1.1:
+            mood_line = f"a frugal stretch (~${avg:g}/outing) — room for a treat"
+        else:
+            mood_line = f"recent spending ~on budget (~${avg:g} of ${base:g})"
+        lines.append(f"💰 _{mood_line}._")
+    lines.append("")
     numbered: list[dict] = []
     n = 0
     for label, slate in sections.items():
@@ -140,7 +169,7 @@ def _render(
                 }
             )
             lines.append(f"{n}. **{ev.title}** — {_when(ev)}")
-            lines.append(f"   {effort_summary(ev, s.computed)} · {suitability_copy(ev)}")
+            lines.append(f"   {effort_summary(ev, s.computed, hh)} · {suitability_copy(ev)}")
             if s.reasons:
                 lines.append(f"   _why: {', '.join(s.reasons)}_")
             if ev.effort.indoor_outdoor == "outdoor":

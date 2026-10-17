@@ -36,6 +36,17 @@ Logistic acceptance over drive minutes and duration hours, centered at per-mood 
 - **Seeding from Google Timeline**: median of the observed drive-distance histogram → `normal`; tired = 0.6×, adventurous = 1.8×, escape = 3.2×.
 - Updates: `too_far`/`too_much_effort` tighten (weighted 0.8·μ + 0.2·observed·0.5); attending beyond the current center loosens halfway toward the observation.
 
+## 2b. Cost is first-class too (`core/cost.py` — the money twin of effort)
+
+Prices are per-person at ingest; everything downstream is **party-relative**, like effort:
+
+- **Party math** (`breakdown`): party = 2 adults + kids; kids under `kid_free_under` (default 2) enter free, others pay `kid_price_ratio` (default 0.5) of the adult price. The breakdown carries per-adult / per-kid / party-weighted **per-person**, a typical total (price_min basis) and a **conservative total** (price_max basis) — budget checks always score the conservative number, so the family is never surprised at the gate. Price unstated → `known=false`, never silently "free" (the price facet is `price:unknown`, not `price:free`).
+- **Mood budgets**: the declared `budget_per_outing` (default $60) is the *normal*-mood party-total baseline; other moods derive from it (tired 0.6×, adventurous 1.8×, escape 3×). A learned absolute curve per mood (`budget_tolerance`) overrides the derivation — exactly parallel to drive/duration tolerance.
+- **Spend trend**: the trailing 14 days of `went` ledger entries are priced with the same party math; `factor = clamp(1 + (baseline − avg_per_outing)/baseline, 0.6, 1.5)`. A splurgy stretch tightens every mood's effective budget, a frugal one earns headroom, no history is neutral.
+- **Scoring**: `cost_fit` = logistic acceptance of the conservative total centered at the mood's effective budget (weight 0.10, see §4). Unknown price is neutral 0.5 — absence of evidence is not cheapness.
+- **Hard cap**: `events_search max_total=X` (and `Query.max_total`) excludes events whose conservative total exceeds X; price-unknown events fail a cap (same honesty rule as strict suitability filters). A mood budget alone never hides events — it reorders them.
+- **Learning**: `too_pricey` tightens that mood's curve a quarter of the way down from the complained-about total (floored at 30 % of baseline); attending something over budget loosens halfway toward the total, mirroring drive.
+
 ## 3. Preference learning — Beta-Binomial facets
 
 For facets (category, subcategory, venue, organizer, effort band, price band, time slot), maintain Beta(α, β) with prior (2, 3):
@@ -55,25 +66,26 @@ The research-spec principle: trends come from the **catalog**, not the sparse fe
 ## 4. Ranking and slate
 
 ```
-score = 0.50·pref_lb + 0.30·effort_fit + 0.10·freshness + 0.10·novelty − unknown_penalty
+score = 0.45·pref_lb + 0.25·effort_fit + 0.10·freshness + 0.10·novelty + 0.10·cost_fit − unknown_penalty
 ```
 
 - `effort_fit` = drive acceptance ⊕ duration acceptance ⊕ mood-intensity match (0.5/0.3/0.2).
+- `cost_fit` = budget acceptance of the conservative party total at the mood's (trend-rescaled) budget center; unknown price → neutral 0.5 (§2b).
 - `unknown_penalty` (0.15) when kid/dog/effort state is unknown — honesty is priced in.
 - Slate: greedy calibrated-MMR (λ = 0.3 fixed), hard caps: 1 anchor/day, ≤2 per venue/organizer/day. With the optional embeddings extra (`pip install "hermes-local-events[embeddings]"`), strong semantic similarity between two events (cosine ≥ 0.85 over stored vectors) counts as redundancy at level 0.6.
 - Digest: one anchor per energy band + alternates + explicit whitespace; exploration never enters the digest (one labeled wildcard in `events_search` only). Outdoor picks may carry a best-effort conditions line (rain %, US AQI, NWS alerts) via an injectable `conditions_fn` — offline digests are byte-identical.
 - Exploration (search only): `wildcard_pick` selects from rank 4+ by a **Thompson draw** over the (decayed) facet posteriors, optionally boosted by catalog trends (see §3b), labeled "wildcard" in results. Seeded by the query date → deterministic within a day.
 - Optional LLM pass (config `llm_rerank`, default on): one listwise re-rank per digest may reorder picks **within** each energy band (never across bands, never add/drop, eligibility untouched), writing the one-line reasons. Candidate order is shuffled before prompting (position-bias mitigation), reasons capped at 90 chars (verbosity bias), any malformed response falls back to the scored order. The digest stays pure exploitation.
-- Every pick carries its score **components** (`pref / effort_fit / freshness / novelty / unknown_pen` + drive + band) — the additive scorer is its own explanation; no SHAP needed.
+- Every pick carries its score **components** (`pref / effort_fit / freshness / novelty / cost_fit / unknown_pen` + cost_total, cost_per_person, budget_effective, trend_factor, drive, band) — the additive scorer is its own explanation; no SHAP needed.
 
 ## 5. Signals
 
 | Signal | Effect |
 |---|---|
-| `went` (recap, calendar, receipt, or location backfill) | facet α+2, tolerance loosening if beyond center |
+| `went` (recap, calendar, receipt, or location backfill) | facet α+2, tolerance loosening if beyond center; money curve also loosens if the priced total ran past the budget center (§2b) |
 | `interested` | facet α+1 |
 | `too_far` / `too_much_effort` | facet β+1 **and** tolerance tightening at that mood |
-| `too_pricey` | facet β+1 (price-band facet) |
+| `too_pricey` | facet β+1 (price-band facet) **and** money-curve tightening at that mood (§2b) |
 | Receipts / calendar confirms | high-weight positives only — absence never implies disinterest |
 | Timeline venue-visit during event window | `went` backfill (location-confirmed attendance) |
 

@@ -48,6 +48,9 @@ def record_feedback(
     keys = P.facet_keys(ev, computed.effort_band, P.price_band_for(ev), P.timeslot_for(ev))
     P.update_facets(hh, keys, fb)
     P.update_momentum(hh, ev.category, fb.is_positive)
+    from .cost import breakdown as cost_breakdown
+
+    party_total = cost_breakdown(ev, hh).total
     drive = computed.drive_minutes
     if (
         signal in ("went", "too_far", "too_much_effort")
@@ -59,7 +62,7 @@ def record_feedback(
         from .geo import estimate_drive_minutes, haversine_km
 
         drive = estimate_drive_minutes(haversine_km(hh.home_lat, hh.home_lon, venue.lat, venue.lon))
-    P.update_tolerance(hh, fb, drive, computed.effort_band)
+    P.update_tolerance(hh, fb, drive, computed.effort_band, party_total=party_total)
     store.kv_set("household", hh.model_dump_json())
     return {"ok": True, "signal": signal, "event": ev.title}
 

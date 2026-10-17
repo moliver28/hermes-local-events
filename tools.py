@@ -67,6 +67,11 @@ def _household(rt, store: Store) -> Household:
         hh.budget_per_outing = float(rt.get_setting("budget_per_outing", hh.budget_per_outing))
     except (TypeError, ValueError):
         pass
+    hh.kid_free_under = int(rt.get_setting("kid_free_under", hh.kid_free_under) or hh.kid_free_under)
+    try:
+        hh.kid_price_ratio = float(rt.get_setting("kid_price_ratio", hh.kid_price_ratio))
+    except (TypeError, ValueError):
+        pass
     return hh
 
 
@@ -127,6 +132,8 @@ def events_search(args: dict, rt=None, **kwargs) -> str:
         text=args.get("query", ""),
         home=(hh.home_lat, hh.home_lon) if hh.home_lat is not None else None,
         max_results=int(args.get("max_results", 10)),
+        max_total=float(args["max_total"]) if args.get("max_total") is not None else None,
+        budget=float(args["budget"]) if args.get("budget") is not None else None,
     )
     events = store.events_between(q.start.isoformat(), q.end.isoformat())
     like_title = None
@@ -179,8 +186,14 @@ def events_search(args: dict, rt=None, **kwargs) -> str:
                 "title": s.event.title,
                 "start": s.event.start.isoformat() if s.event.start else None,
                 "url": s.event.url,
-                "effort": effort_summary(s.event, s.computed),
+                "effort": effort_summary(s.event, s.computed, hh),
                 "effort_band": s.computed.effort_band,
+                "cost": {
+                    "known": s.components.get("cost_known"),
+                    "per_person": s.components.get("cost_per_person"),
+                    "total": s.components.get("cost_total"),
+                    "budget_effective": s.components.get("budget_effective"),
+                },
                 "kid": s.event.kid.value,
                 "dog": s.event.dog.value,
                 "audience": s.event.audience.value,
@@ -606,6 +619,36 @@ def events_forget_locations(args: dict, rt=None, **kwargs) -> str:
     return json.dumps({"ok": True, "forgotten": "visit counts + drive histogram cleared; feedback retained"})
 
 
+def events_budget(args: dict, rt=None, **kwargs) -> str:
+    store = _store(rt)
+    hh = _household(rt, store)
+    from core.cost import MOOD_BUDGET_FACTORS, budget_for
+    from core.cost import trend as spend_trend
+
+    trend = spend_trend(store, hh)
+    return json.dumps(
+        {
+            "ok": True,
+            "baseline_budget_per_outing": hh.budget_per_outing,
+            "budgets": {
+                mood: {
+                    "effective": round(budget_for(hh, mood) * trend["factor"], 2),
+                    "learned": hh.budget_tolerance.get(mood),
+                    "derived_from_baseline": round(hh.budget_per_outing * factor, 2),
+                }
+                for mood, factor in MOOD_BUDGET_FACTORS.items()
+            },
+            "kid_pricing": {"free_under_age": hh.kid_free_under, "price_ratio": hh.kid_price_ratio},
+            "trend": trend,
+            "note": (
+                "'too pricey' on a pick tightens that mood's budget; attending something over budget "
+                "loosens it halfway toward the total. mood budgets: tired 0.6×, normal 1×, adventurous "
+                "1.8×, escape 3× baseline, rescaled by trend (0.6–1.5)."
+            ),
+        }
+    )
+
+
 HANDLERS = {
     "events_refresh": events_refresh,
     "events_search": events_search,
@@ -619,4 +662,5 @@ HANDLERS = {
     "events_share": events_share,
     "events_import_locations": events_import_locations,
     "events_forget_locations": events_forget_locations,
+    "events_budget": events_budget,
 }

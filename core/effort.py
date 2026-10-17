@@ -91,6 +91,8 @@ def static_effort(event: Event, venue: Venue | None) -> Event:
     e.overnight = infer_overnight(text, e.duration_hours)
     e.indoor_outdoor = infer_indoor_outdoor(venue_type, text)
     e.stroller_friendly = infer_stroller(text)
+    e.cost_min = event.price_min
+    e.cost_max = event.price_max
     return event
 
 
@@ -144,12 +146,12 @@ def planning_lead_penalty(days: float | None, booking_required: bool) -> float:
     return 0.05
 
 
-def cost_per_party(event: Event, hh: Household) -> float:
-    adults = 2
-    kids = len(hh.kid_ages)
-    n = adults + kids
-    base = event.price_min if event.price_min is not None else 0.0
-    return base * n
+def cost_per_party(event: Event, hh: Household) -> float | None:
+    """Conservative party total (kid discounts applied); None if price unknown."""
+    from .cost import breakdown
+
+    b = breakdown(event, hh)
+    return b.total if b.known else None
 
 
 def effort_score(
@@ -173,8 +175,8 @@ def effort_score(
     if e.duration_hours is not None:
         dur_tol = hh.duration_tolerance.get(mood.value, 3.5)
         dur_n = min(1.0, e.duration_hours / max(1.0, dur_tol * 2.0))
-    if e.cost_max is not None or e.cost_min is not None:
-        cpp = cost_per_party(event, hh)
+    cpp = cost_per_party(event, hh)
+    if cpp is not None:
         cost_n = min(1.0, cpp / max(10.0, hh.budget_per_outing * 2.0))
     intensity = e.physical_intensity if e.physical_intensity is not None else 0.5
     kid_pen = kid_logistics_penalty(event, hh)
@@ -240,8 +242,8 @@ def energy_preset(hh: Household, energy: Energy) -> dict:
     return presets[energy]
 
 
-def effort_summary(event: Event, computed: EffortComputed | None) -> str:
-    """Plain-talk effort line for digests: '18-min drive · 2h · stroll-paced · $free'."""
+def effort_summary(event: Event, computed: EffortComputed | None, hh: Household | None = None) -> str:
+    """Plain-talk effort line: '18-min drive · 2h · stroll-paced · $10/person · ~$35 for the party'."""
     parts = []
     c = computed
     if c and c.drive_minutes is not None:
@@ -260,7 +262,14 @@ def effort_summary(event: Event, computed: EffortComputed | None) -> str:
             if it < 0.75
             else "hard-charging"
         )
-    if event.is_free or (event.price_max == 0):
+    if hh is not None:
+        from .cost import breakdown as _bd
+        from .cost import cost_line
+
+        line = cost_line(_bd(event, hh))
+        if line != "price unknown":
+            parts.append(line)
+    elif event.is_free or (event.price_max == 0):
         parts.append("free")
     elif event.price_min is not None:
         top = event.price_max if event.price_max is not None else event.price_min

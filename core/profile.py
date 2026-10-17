@@ -38,8 +38,12 @@ def facet_keys(
 def price_band_for(event: Event) -> str:
     from .effort import tax
 
+    if event.is_free:
+        return "free"
+    if event.price_min is None and event.price_max is None:
+        return "unknown"  # price not stated — never bookkeep it as free
     t = tax()["price_bands"]
-    p = event.price_min if event.price_min is not None else 0.0
+    p = event.price_min if event.price_min is not None else event.price_max
     if p <= 0:
         return "free"
     for name in ("cheap", "moderate", "pricey"):
@@ -164,10 +168,17 @@ def accept_duration(hh: Household, mood: str, hours: float) -> float:
 
 
 def update_tolerance(
-    hh: Household, fb: Feedback, drive_minutes: float | None, effort_band: str | None
+    hh: Household,
+    fb: Feedback,
+    drive_minutes: float | None,
+    effort_band: str | None,
+    party_total: float | None = None,
 ) -> None:
-    """too_far/too_much_effort tighten the curve at that mood; attendance past the
-    center loosens it (halfway toward the observed value)."""
+    """too_far/too_much_effort tighten the drive curve at that mood; too_pricey
+    tightens the money curve; attendance past any center loosens it (halfway
+    toward the observed value)."""
+    from .cost import update_tolerance as update_cost_tolerance
+
     mood = fb.mood or "normal"
     if fb.signal in ("too_far", "too_much_effort") and drive_minutes:
         mu = hh.drive_tolerance.get(mood, 45.0)
@@ -181,6 +192,7 @@ def update_tolerance(
         hh.duration_tolerance[mood] = max(1.0, 0.85 * mu)
     elif fb.effort_match == "right_effort":
         pass  # right effort is rewarded through facet posteriors, not curve inflation
+    update_cost_tolerance(hh, fb.signal, party_total, mood)
 
 
 def seed_from_drive_histogram(hh: Household, histogram: dict[str, int]) -> None:
