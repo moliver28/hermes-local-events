@@ -82,6 +82,13 @@ Curated South Sound set ships as default (see [docs/SOURCES.md](docs/SOURCES.md)
 - **Morning-of nudge** — Sat/Sun 08:30: weather recheck, leave-by time, what-to-bring
 - **Long weekend escape prompt** — Monday noon, ahead of 3-day weekends
 
+## Skills (new user → fully adopted)
+
+- **`local-events-onboard`** — first-run: household profile, energy patterns, source discovery for any region, optional Google Timeline import, digest setup
+- **`local-events-find`** — daily driver: mood→energy mapping, party modes, digest delivery, feedback parsing, calendar + invite cards, email mining (newsletters → candidates, receipts → attendance), privacy commands
+- **`local-events-recap`** — Sunday two-tap recap: savoring + the signals that teach the ranker
+- **`local-events-adopt`** — the adoption ladder: introduces exactly one next feature (calendar sync → Timeline import → email mining → Ticketmaster key → escapes → adults mode) at a natural moment, never as a feature tour
+
 ## Docs
 
 - [docs/SPEC.md](docs/SPEC.md) — requirements distilled from the attendance-first research spec

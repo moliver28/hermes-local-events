@@ -49,3 +49,5 @@ Offer: "If you use Google Maps, you can export your Timeline and I'll learn your
 
 - Offer the automation blueprint: "Want the weekend digest Thursday evenings?" → enable `local-events:thursday_digest` (default Thu 20:00).
 - Show `events_digest` output as the first digest; remind them the first month is calibration and every 🔥/👌/✖ teaches it.
+- **Stop here.** Onboarding is complete — do NOT pitch calendar sync, email mining, escapes, or the Ticketmaster key now. The `local-events-adopt` skill introduces those one at a time, at natural moments.
+- If the user declines the Timeline import here, leave it; the adopt skill may raise it once more after ~2 weeks of feedback, then never again.

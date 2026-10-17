@@ -112,6 +112,7 @@ def register(ctx):
         ("local-events-onboard", "skills/onboard/SKILL.md"),
         ("local-events-find", "skills/find-events/SKILL.md"),
         ("local-events-recap", "skills/recap/SKILL.md"),
+        ("local-events-adopt", "skills/adopt/SKILL.md"),
     ):
         fn = getattr(ctx, "register_skill", None)
         if callable(fn):
