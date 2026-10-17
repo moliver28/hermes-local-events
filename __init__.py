@@ -8,7 +8,6 @@ automation blueprints (Thursday digest, morning-of nudge, long-weekend prompt).
 from __future__ import annotations
 
 import json
-
 import sys
 from pathlib import Path
 
