@@ -21,6 +21,15 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.6"]
 
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+# The plugin is loaded in-place by Hermes; pip install exists for dev tooling.
+# Explicit discovery avoids flat-layout ambiguity (data/, skills/ are not packages).
+[tool.setuptools.packages.find]
+include = ["core*", "ingest*"]
+
 [tool.ruff]
 line-length = 110
 target-version = "py311"
