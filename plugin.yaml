@@ -16,6 +16,8 @@ provides_tools:
   - events_refresh
   - events_search
   - events_digest
+  - events_conditions
+  - events_ingest_content
   - events_feedback
   - events_calendar_ics
   - events_ingest_email

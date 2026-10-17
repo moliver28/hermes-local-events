@@ -11,7 +11,7 @@ from uuid import uuid4
 
 from rapidfuzz import fuzz
 
-from .models import Event
+from .models import Event, now_utc
 
 STOPWORDS = {"the", "a", "an", "at", "of", "on", "in", "and", "for", "to", "with", "2024", "2025", "2026"}
 WEEK = timedelta(days=1)
@@ -96,7 +96,11 @@ def dedupe(events: list[Event]) -> list[Event]:
         else:
             merged.append(_merge([events[m] for m in members]))
     link_series(merged)
-    merged.sort(key=lambda e: e.start or events[0].start)
+    # Sort ascending by start; events with unknown start sort last. The
+    # old fallback (e.start or events[0].start) crashed with None < None
+    # when the first event also had no start time.
+    unknown_sentinel = (now_utc() + timedelta(days=10000))
+    merged.sort(key=lambda e: e.start or unknown_sentinel)
     return merged
 
 

@@ -9,8 +9,22 @@ from __future__ import annotations
 
 import json
 
-from schemas import SCHEMAS
-from tools import HANDLERS
+import sys
+from pathlib import Path
+
+_PLUGIN_ROOT = str(Path(__file__).resolve().parent)
+if _PLUGIN_ROOT not in sys.path:
+    # Package-mode loading (Hermes host): keep absolute imports valid
+    # for schemas, tools, core.*, ingest.*, cli. Standalone mode already
+    # has the repo root on sys.path via conftest.py / `python cli.py`.
+    sys.path.insert(0, _PLUGIN_ROOT)
+
+try:
+    from schemas import SCHEMAS
+    from tools import HANDLERS
+except ImportError:
+    from .schemas import SCHEMAS
+    from .tools import HANDLERS
 
 PLUGIN_NAME = "local-events"
 
@@ -64,7 +78,10 @@ AUTOMATION_BLUEPRINTS = [
 def register(ctx):
     """Entry point per Hermes plugin guide. Tools, slash command, CLI, skills,
     blueprints. Capability calls are guarded so older hosts load the tools."""
-    from core.runtime import HermesRuntime
+    try:
+        from core.runtime import HermesRuntime
+    except ImportError:  # loaded as a package by Hermes
+        from .core.runtime import HermesRuntime
 
     rt = HermesRuntime(ctx)
 
@@ -153,11 +170,14 @@ def _fmt(result: dict) -> str:
 
 
 def _cli_entry(args: str) -> str:
-    """Inside-Hermes CLI passthrough; standalone use is `python cli.py ...`."""
+    """Inside-Hermes CLI passthrough; standalone use is `python cli.py`."""
     import contextlib
     import io
 
-    from cli import main
+    try:
+        from cli import main
+    except ImportError:  # loaded as a package by Hermes
+        from .cli import main
 
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):

@@ -7,20 +7,36 @@ import json
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from core import digest as digest_mod
-from core import feedback as feedback_mod
-from core.calendar import events_to_ics
-from core.dedup import dedupe
-from core.email_ingest import extract_candidates, extract_receipt
-from core.locations import analyze as locations_analyze
-from core.locations import apply_import, cleanup_imported_files
-from core.models import Energy, Household, Party, now_utc
-from core.net import safe_probe
-from core.rank import Query, rank, wildcard_pick
-from core.runtime import home_coord
-from core.share import invite_card
-from core.store import Store
-from ingest import runner as ingest_runner
+try:
+    from core import digest as digest_mod
+    from core import feedback as feedback_mod
+    from core.calendar import events_to_ics
+    from core.dedup import dedupe
+    from core.email_ingest import extract_candidates, extract_receipt
+    from core.locations import analyze as locations_analyze
+    from core.locations import apply_import, cleanup_imported_files
+    from core.models import Energy, Household, Party, now_utc
+    from core.net import safe_probe
+    from core.rank import Query, rank, wildcard_pick
+    from core.runtime import home_coord
+    from core.share import invite_card
+    from core.store import Store
+    from ingest import runner as ingest_runner
+except ImportError:  # loaded as a package by Hermes
+    from .core import digest as digest_mod
+    from .core import feedback as feedback_mod
+    from .core.calendar import events_to_ics
+    from .core.dedup import dedupe
+    from .core.email_ingest import extract_candidates, extract_receipt
+    from .core.locations import analyze as locations_analyze
+    from .core.locations import apply_import, cleanup_imported_files
+    from .core.models import Energy, Household, Party, now_utc
+    from .core.net import safe_probe
+    from .core.rank import Query, rank, wildcard_pick
+    from .core.runtime import home_coord
+    from .core.share import invite_card
+    from .core.store import Store
+    from .ingest import runner as ingest_runner
 
 
 def _store(rt) -> Store:
