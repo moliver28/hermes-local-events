@@ -78,19 +78,23 @@ class JsonLdConnector(Connector):
     name = "jsonld"
 
     def fetch(self, cfg: dict, client: httpx.Client | None = None) -> list[Event]:
-        events: list[dict] = []
+        out: list[Event] = []
         for url in cfg.get("urls", [cfg.get("url")] if cfg.get("url") else []):
             html = fetch(url, client)
             if not html:
                 continue
-            found = list(_iter_jsonld(html))
-            events.extend(found)
+            found = self.parse(html, cfg)
+            out.extend(found)
             if not found and cfg.get("follow_links", True):
-                events.extend(
-                    self._follow_detail_links(url, html, client, max_links=cfg.get("max_links", 15))
-                )
+                for e in self._follow_detail_links(url, html, client, max_links=cfg.get("max_links", 15)):
+                    ev = self._to_event(cfg, e)
+                    if ev:
+                        out.append(ev)
+        return out
+
+    def parse(self, html: str, cfg: dict) -> list[Event]:
         out = []
-        for e in events:
+        for e in _iter_jsonld(html or ""):
             ev = self._to_event(cfg, e)
             if ev:
                 out.append(ev)
@@ -139,15 +143,17 @@ class JsonLdConnector(Connector):
         venue = None
         if loc.get("name"):
             geo = loc.get("geo") or {}
-            venue = venue_from(
-                cfg["id"],
-                loc["name"],
-                lat=float(geo["latitude"]) if geo.get("latitude") else None,
-                lon=float(geo["longitude"]) if geo.get("longitude") else None,
-                venue_type=cfg.get("venue_type", ""),
-                address=loc.get("address", {}).get("streetAddress", "")
-                if isinstance(loc.get("address"), dict)
-                else str(loc.get("address", "")),
+            venue = self.register_venue(
+                venue_from(
+                    cfg["id"],
+                    loc["name"],
+                    lat=float(geo["latitude"]) if geo.get("latitude") else None,
+                    lon=float(geo["longitude"]) if geo.get("longitude") else None,
+                    venue_type=cfg.get("venue_type", ""),
+                    address=loc.get("address", {}).get("streetAddress", "")
+                    if isinstance(loc.get("address"), dict)
+                    else str(loc.get("address", "")),
+                )
             )
         lo, hi, free = _price(e.get("offers"))
         cats = e.get("about") or []

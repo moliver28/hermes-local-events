@@ -1,6 +1,6 @@
 """Geocoding (Nominatim, cached + rate-limited), drive-time estimates
 (OpenRouteService at api.heigit.org when a key is set, haversine fallback),
-and Open-Meteo rain checks. No Google dependencies anywhere."""
+and Open-Meteo / NWS conditions (rain, smoke, alerts). No Google dependencies."""
 
 from __future__ import annotations
 
@@ -13,6 +13,9 @@ import httpx
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
 ORS_MATRIX_URL = "https://api.heigit.org/api/v2/matrix/driving-car"  # old endpoint shut Aug 2026
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
+AIR_QUALITY_URL = "https://air-quality-api.open-meteo.com/v1/air-quality"
+NWS_ALERTS_URL = "https://api.weather.gov/alerts/active"
+USER_AGENT = "hermes-local-events/0.1 (personal event finder; OSS)"
 
 AVG_CITY_SPEED_KMH = 38.0
 DETOUR_FACTOR = 1.3
@@ -159,3 +162,115 @@ def rain_chance(lat: float, lon: float, when_iso: str, client: httpx.Client | No
             except Exception:
                 pass
     return None
+
+
+def air_quality(lat: float, lon: float, when_iso: str, client: httpx.Client | None = None) -> float | None:
+    """US AQI (PM2.5) nearest the event hour — wildfire-smoke gate for outdoor
+    picks (Washington smoke season). Open-Meteo air-quality API, keyless."""
+    try:
+        c = client or httpx.Client(timeout=8)
+        resp = c.get(
+            AIR_QUALITY_URL,
+            params={
+                "latitude": lat,
+                "longitude": lon,
+                "hourly": "us_aqi_pm2_5",
+                "forecast_days": 3,
+            },
+        )
+        resp.raise_for_status()
+        hours = resp.json().get("hourly", {})
+        times = hours.get("time", [])
+        vals = hours.get("us_aqi_pm2_5", [])
+        target = when_iso[:16]  # minute precision for nearest-hour matching
+        best_i, best_delta = None, None
+        for i, t in enumerate(times):
+            if vals[i] is None:
+                continue
+            delta = abs(_hour_diff(t, target))
+            if best_delta is None or delta < best_delta:
+                best_i, best_delta = i, delta
+        return float(vals[best_i]) if best_i is not None else None
+    except Exception:
+        return None
+    finally:
+        if client is None:
+            try:
+                c.close()
+            except Exception:
+                pass
+
+
+def _hour_diff(open_meteo_time: str, target_iso: str) -> float:
+    """Both 'YYYY-MM-DDTHH:MM' prefixes; difference in hours (date-aware)."""
+    from datetime import datetime
+
+    try:
+        a = datetime.strptime(open_meteo_time[:16], "%Y-%m-%dT%H:%M")
+        b = datetime.strptime(target_iso[:16], "%Y-%m-%dT%H:%M")
+        return abs((a - b).total_seconds() / 3600.0)
+    except ValueError:
+        return 1e9
+
+
+def nws_alerts(lat: float, lon: float, client: httpx.Client | None = None) -> list[dict]:
+    """Active NWS alerts for a point (advisories matter for outdoor plans).
+    Keyless; requires an identifying User-Agent per NWS docs. Caps at 2,
+    Moderate severity and up."""
+    try:
+        c = client or httpx.Client(timeout=8)
+        resp = c.get(
+            NWS_ALERTS_URL,
+            params={"point": f"{lat:.4f},{lon:.4f}"},
+            headers={"User-Agent": USER_AGENT},
+        )
+        resp.raise_for_status()
+        out = []
+        for f in resp.json().get("features", []):
+            props = f.get("properties", {})
+            if props.get("status") and props["status"] != "Actual":
+                continue
+            if (props.get("severity") or "") not in ("Moderate", "Severe", "Extreme"):
+                continue
+            out.append({"event": props.get("event", ""), "severity": props.get("severity", "")})
+            if len(out) >= 2:
+                break
+        return out
+    except Exception:
+        return []
+    finally:
+        if client is None:
+            try:
+                c.close()
+            except Exception:
+                pass
+
+
+def conditions(lat: float, lon: float, when_iso: str, client: httpx.Client | None = None) -> dict:
+    """Best-effort snapshot for one event: rain %, US AQI, active alerts.
+    Each source fails independently to None/[] — offline stays offline-safe."""
+    return {
+        "rain_pct": rain_chance(lat, lon, when_iso, client),
+        "aqi": air_quality(lat, lon, when_iso, client),
+        "alerts": nws_alerts(lat, lon, client),
+    }
+
+
+def conditions_line(cond: dict | None) -> str | None:
+    """Plain-talk conditions line for a pick; None when nothing worth saying."""
+    if not cond:
+        return None
+    parts = []
+    rain = cond.get("rain_pct")
+    if rain is not None and rain >= 40:
+        parts.append(f"☔ {rain:.0f}% rain at start — swap ready")
+    aqi = cond.get("aqi")
+    if aqi is not None:
+        if aqi >= 150:
+            parts.append(f"😷 AQI {aqi:.0f} — unhealthy, skip strenuous outdoor")
+        elif aqi >= 100:
+            parts.append(f"😷 AQI {aqi:.0f} — sensitive groups take care")
+    for a in cond.get("alerts", [])[:1]:
+        if a.get("event"):
+            parts.append(f"⚠️ {a['event']}")
+    return " · ".join(parts) if parts else None

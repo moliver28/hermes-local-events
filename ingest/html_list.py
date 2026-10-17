@@ -23,8 +23,9 @@ class HtmlListConnector(Connector):
 
     def fetch(self, cfg: dict, client: httpx.Client | None = None) -> list[Event]:
         body = fetch(cfg["url"], client)
-        if not body:
-            return []
+        return self.parse(body, cfg) if body else []
+
+    def parse(self, body: str, cfg: dict) -> list[Event]:
         parser = HTMLParser(body)
         out = []
         for node in parser.css(cfg.get("item", "article, .event, li")):
@@ -39,12 +40,14 @@ class HtmlListConnector(Connector):
             if href.startswith("/"):
                 from urllib.parse import urljoin
 
-                href = urljoin(cfg["url"], href)
+                href = urljoin(cfg.get("url", ""), href)
             desc_node = node.css_first(cfg.get("description", "p"))
             desc = desc_node.text(strip=True)[:1500] if desc_node else ""
             start = self._parse_date(node, cfg)
             venue = (
-                venue_from(cfg["id"], cfg["venue_name"], venue_type=cfg.get("venue_type", ""))
+                self.register_venue(
+                    venue_from(cfg["id"], cfg["venue_name"], venue_type=cfg.get("venue_type", ""))
+                )
                 if cfg.get("venue_name")
                 else None
             )
@@ -93,8 +96,9 @@ class TacomaWeeklyConnector(Connector):
 
     def fetch(self, cfg: dict, client: httpx.Client | None = None) -> list[Event]:
         body = fetch(cfg["url"], client)
-        if not body:
-            return []
+        return self.parse(body, cfg) if body else []
+
+    def parse(self, body: str, cfg: dict) -> list[Event]:
         parser = HTMLParser(body)
         out = []
         for a in parser.css("a[href]"):

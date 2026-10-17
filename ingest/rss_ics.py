@@ -1,18 +1,22 @@
 """Generic RSS and ICS connectors — library event platforms (BiblioCommons,
-Communico) and Luma public calendars expose these directly."""
+Communico) and Luma public calendars expose these directly. ICS feeds expand
+RRULE recurrences into instances (library story times), all sharing series_id."""
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 
 import feedparser
 import httpx
+import recurring_ical_events
 from dateutil import parser as dtparse
 from icalendar import Calendar
 
 from core.models import Event
 
 from .base import Connector, make_event
+
+RECURRING_HORIZON_DAYS = 90
 
 
 def _cat_from_tags(tags) -> str:
@@ -37,8 +41,9 @@ class RssConnector(Connector):
         import ingest.base as base
 
         body = base.fetch(cfg["url"], client)
-        if not body:
-            return []
+        return self.parse(body, cfg) if body else []
+
+    def parse(self, body: str, cfg: dict) -> list[Event]:
         feed = feedparser.parse(body)
         out = []
         for entry in feed.entries:
@@ -74,29 +79,58 @@ class IcsConnector(Connector):
         import ingest.base as base
 
         body = base.fetch(cfg["url"], client)
-        if not body:
-            return []
+        return self.parse(body, cfg) if body else []
+
+    def parse(self, body: str, cfg: dict) -> list[Event]:
         cal = Calendar.from_ical(body)
+        has_rrule = any(comp.get("RRULE") for comp in cal.walk("VEVENT"))
+        if has_rrule:
+            return self._expanded(cal, cfg)
+        return self._plain(cal, cfg)
+
+    def _plain(self, cal, cfg: dict) -> list[Event]:
         out = []
         for comp in cal.walk("VEVENT"):
-            title = str(comp.get("SUMMARY", "")).strip()
-            if not title:
-                continue
-            start = comp.decoded("DTSTART")
-            end = comp.decoded("DTEND") if comp.get("DTEND") else None
-            if isinstance(start, datetime) and start.tzinfo is None:
-                # floating local times on library calendars are US Pacific in our region
-                start = start.replace(tzinfo=None)
-            out.append(
-                make_event(
-                    source_id=cfg["id"],
-                    source_event_id=str(comp.get("UID", title)),
-                    title=title,
-                    url=str(comp.get("URL", "") or ""),
-                    description=str(comp.get("DESCRIPTION", "") or "")[:1500],
-                    start=start,
-                    end=end if isinstance(end, datetime) else None,
-                    category=_cat_from_tags([{"term": str(comp.get("CATEGORIES", ""))}]),
-                )
-            )
+            ev = self._instance(comp, cfg, occurrence_key=None)
+            if ev:
+                out.append(ev)
         return out
+
+    def _expanded(self, cal, cfg: dict) -> list[Event]:
+        """RRULE feeds become instances: one event per occurrence within the
+        horizon, all sharing series_id so trends can tell series from one-offs."""
+        now = datetime.now(UTC)
+        window_end = now + timedelta(days=RECURRING_HORIZON_DAYS)
+        out = []
+        for comp in recurring_ical_events.of(cal).between(now - timedelta(days=1), window_end):
+            uid = str(comp.get("UID", ""))
+            ev = self._instance(comp, cfg, occurrence_key=uid)
+            if ev:
+                out.append(ev)
+        return out
+
+    def _instance(self, comp, cfg: dict, occurrence_key: str | None) -> Event | None:
+        title = str(comp.get("SUMMARY", "")).strip()
+        if not title:
+            return None
+        try:
+            start = comp.decoded("DTSTART")
+        except Exception:
+            return None
+        end = comp.decoded("DTEND") if comp.get("DTEND") else None
+        uid = str(comp.get("UID", title))
+        # per-occurrence identity: without the date suffix, dedup's same-source
+        # rule would collapse every occurrence of a series into one event
+        source_event_id = f"{uid}:{start.isoformat()}" if occurrence_key else uid
+        series_id = f"{cfg['id']}:{uid}" if occurrence_key else None
+        return make_event(
+            source_id=cfg["id"],
+            source_event_id=source_event_id,
+            title=title,
+            url=str(comp.get("URL", "") or ""),
+            description=str(comp.get("DESCRIPTION", "") or "")[:1500],
+            start=start,
+            end=end if isinstance(end, datetime) else None,
+            category=_cat_from_tags([{"term": str(comp.get("CATEGORIES", ""))}]),
+            series_id=series_id,
+        )

@@ -31,7 +31,8 @@ Access methods verified by live research in Oct 2026. Re-verify before adding pa
 
 - **Geocoding**: Nominatim (`nominatim.openstreetmap.org`) — 1 req/s max, cached aggressively in SQLite.
 - **Travel time**: OpenRouteService **at `api.heigit.org`** (the old `api.openrouteservice.org` shut down Aug 24, 2026). Free standard tier; API key optional — haversine×detour-factor estimate is the fallback and drive times are cached per (venue, mode, day-part).
-- **Weather**: Open-Meteo (no key) for rain probabilities on outdoor picks.
+- **Weather**: Open-Meteo (no key) for rain probabilities on outdoor picks; Open-Meteo **Air Quality** (`us_aqi_pm2_5`, no key, data CC BY 4.0 — attribution required) for wildfire-smoke gating; **api.weather.gov** NWS alerts (no key, identifying User-Agent required).
+- **Agent-fed sources**: pages fetched by Hermes's own web tools (`web_extract`/`browser_exec`) are parsed by the same connectors via `events_ingest_content`; URLs pass SSRF host checks even when the plugin itself never fetches.
 
 ## Etiquette / compliance
 

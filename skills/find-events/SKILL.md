@@ -30,6 +30,19 @@ Pick numbers ("#2") resolve via the last digest — pass them as `event_ref`.
 - "add to calendar" → `events_calendar_ics {"event_ids": ["..."]}`, then add via Hermes's Google Calendar skill. Attendance confirmed later via `signal=went`.
 - "invite friends" → `events_share {"event_id": "..."}` → hand back the card text for forwarding.
 
+## Morning-of conditions (`events_conditions`)
+
+Before they leave ("should we still go?") or in the morning nudge: `events_conditions {"event_ref": "#1"}` → rain % at start, US AQI (wildfire smoke), active NWS alerts. Say the line plainly; AQI 150+ or a severe alert → recommend skipping strenuous outdoor plans and offer an indoor alternate (`events_search energy=tired`).
+
+## Blocked sources — your web tools are part of the pipeline
+
+When `events_refresh` reports a source error (403/429/bot wall/JS shell), don't just report it — recover it:
+
+1. `web_extract` the calendar page; if it's JS-rendered or blocked, retry through `browser_exec` (blocked-page-recovery pattern).
+2. Feed the fetched body through `events_ingest_content {source_id, url, content, format?}` — those events enter the same store and rank identically. Events carry `method="agent-browser"` provenance.
+3. If a login is required: only inside your browser with the host vault, user present for 2FA. Never handle their password.
+4. Mention once that the source is now "browser-fed" so the user knows why refresh looks different.
+
 ## Escapes (top of the energy dial)
 
 `energy=escape` widens the radius (~150 mi, Olympic Peninsula / Rainier / coast scale) and flags booking lead time ("book lodging by X"). Only surface proactively ahead of 3-day weekends (blueprint does this) or when asked.

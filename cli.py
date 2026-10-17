@@ -121,8 +121,12 @@ def main(argv: list[str] | None = None) -> int:
     else:
         from core import feedback as fb
         from core.store import Store
+        from core.trends import catalog_stats
 
-        out = json.dumps(fb.metrics(Store(rt.db_path)), indent=2)
+        store = Store(rt.db_path)
+        out = json.dumps(
+            {"feedback": fb.metrics(store), "catalog": catalog_stats(store)}, indent=2, default=str
+        )
 
     data = json.loads(out)
     if args.cmd == "search" and data.get("ok"):

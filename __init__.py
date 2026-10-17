@@ -1,8 +1,8 @@
 """hermes-local-events — native Hermes Agent plugin.
 
-Registers 10 tools, an /events slash command, a `local-events` CLI command,
-three bundled skills (onboard / find-events / recap), and three automation
-blueprints (Thursday digest, morning-of nudge, long-weekend prompt).
+Registers 12 tools, an /events slash command, a `local-events` CLI command,
+four bundled skills (onboard / find-events / recap / adopt), and three
+automation blueprints (Thursday digest, morning-of nudge, long-weekend prompt).
 """
 
 from __future__ import annotations
@@ -37,9 +37,11 @@ AUTOMATION_BLUEPRINTS = [
         "description": "Weather recheck, drive time, and what-to-bring for today's planned events.",
         "schedule_template": "30 8 * * 6,0",
         "prompt_template": (
-            "Check today's calendar for events added from the events plugin. For each: fetch the "
-            "rain chance (events_search for the event, or ask me), restate the effort line "
-            "(drive, duration, what to bring for kids+dog), and give a leave-by time."
+            "Check today's calendar for events added from the events plugin. For each, run "
+            "events_conditions on the event (rain %, air quality, alerts) and include the "
+            "conditions line. Restate the effort line (drive, duration, what to bring for "
+            "kids+dog). If AQI is 150+ or a severe alert is active, say plainly to skip "
+            "strenuous outdoor plans and offer an indoor alternate via events_search energy=tired."
         ),
         "slots": [],
         "tags": ["events"],

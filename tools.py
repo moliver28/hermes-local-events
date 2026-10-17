@@ -10,6 +10,7 @@ from pathlib import Path
 from core import digest as digest_mod
 from core import feedback as feedback_mod
 from core.calendar import events_to_ics
+from core.dedup import dedupe
 from core.email_ingest import extract_candidates, extract_receipt
 from core.locations import analyze as locations_analyze
 from core.locations import apply_import, cleanup_imported_files
@@ -140,8 +141,13 @@ def events_search(args: dict, rt=None, **kwargs) -> str:
         fts = {e.id for e in store.search_text(q.text)}
         events = [e for e in events if e.id in fts] or store.search_text(q.text)
     scored = rank(events, q, hh, store)
-    # One labeled exploration slot per search: a Thompson-sampled pick from rank 4+.
-    wildcard = wildcard_pick(scored, hh, seed=q.start.date().isoformat())
+    # One labeled exploration slot per search: a Thompson-sampled pick from rank
+    # 4+, boosted by catalog supply trends (search only — never the digest).
+    try:
+        trends = (json.loads(store.kv_get("catalog_stats") or "{}") or {}).get("trending") or {}
+    except json.JSONDecodeError:
+        trends = {}
+    wildcard = wildcard_pick(scored, hh, seed=q.start.date().isoformat(), trends=trends or None)
     results = scored[: q.max_results]
     if wildcard is not None and all(s.event.id != wildcard.event.id for s in results):
         if len(results) < q.max_results:
@@ -190,7 +196,18 @@ def events_digest(args: dict, rt=None, **kwargs) -> str:
         from core.llm import make_llm_fn
 
         llm = make_llm_fn(rt)
-    result = digest_mod.build_digest(hh, store, party=party, llm=llm)
+    if rt.get_setting("weather_checks", True):
+
+        def conditions_fn(ev, s):
+            if not (s.venue and s.venue.lat is not None) or not ev.start:
+                return None
+            from core.geo import conditions
+
+            return conditions(s.venue.lat, s.venue.lon, ev.start.isoformat())
+
+    else:
+        conditions_fn = None
+    result = digest_mod.build_digest(hh, store, party=party, llm=llm, conditions_fn=conditions_fn)
     store.kv_set("last_digest_picks", json.dumps(result["picks"]))
     store.kv_set("last_digest_at", now_utc().isoformat())
     return json.dumps({"ok": True, **result})
@@ -202,6 +219,11 @@ def events_feedback(args: dict, rt=None, **kwargs) -> str:
     eid = _resolve_ref(store, rt, args.get("event_ref", ""))
     if not eid:
         return json.dumps({"ok": False, "error": "unknown event_ref; give an event id or digest pick number"})
+    band = None
+    for p in _last_picks(store):
+        if p.get("event_id") == eid and p.get("energy"):
+            band = p["energy"]
+            break
     result = feedback_mod.record_feedback(
         hh,
         store,
@@ -210,8 +232,34 @@ def events_feedback(args: dict, rt=None, **kwargs) -> str:
         effort_match=args.get("effort_match"),
         mood=args.get("mood"),
         note=args.get("note", ""),
+        band=band,
     )
     return json.dumps(result)
+
+
+def events_conditions(args: dict, rt=None, **kwargs) -> str:
+    """Rain %, US AQI, and NWS alerts for one event (best-effort; offline-safe)."""
+    store = _store(rt)
+    eid = _resolve_ref(store, rt, str(args.get("event_ref", "")))
+    ev = store.get_event(eid) if eid else None
+    if not ev:
+        return json.dumps({"ok": False, "error": "unknown event_ref"})
+    venue = store.get_venue(ev.venue_id) if ev.venue_id else None
+    if not venue or venue.lat is None or not ev.start:
+        return json.dumps({"ok": False, "error": "no venue coordinates for that event"})
+    from core.geo import conditions, conditions_line
+
+    cond = conditions(venue.lat, venue.lon, ev.start.isoformat())
+    return json.dumps(
+        {
+            "ok": True,
+            "event": ev.title,
+            "start": ev.start.isoformat(),
+            "conditions": cond,
+            "line": conditions_line(cond),
+            "note": "best-effort; fields may be None offline",
+        }
+    )
 
 
 def events_calendar_ics(args: dict, rt=None, **kwargs) -> str:
@@ -253,36 +301,28 @@ def events_ingest_email(args: dict, rt=None, **kwargs) -> str:
 
 
 def events_sources(args: dict, rt=None, **kwargs) -> str:
+    store = _store(rt)
     sources = ingest_runner.load_sources()
+    user = ingest_runner.load_user_sources(rt)
+    known_ids = {s.get("id") for s in sources}
+    sources += [s for s in user if s.get("id") not in known_ids]
     if args.get("action") == "validate":
         probe = safe_probe(args.get("url", ""))
         if not probe.get("ok"):
             return json.dumps({"ok": False, "url": args.get("url", ""), "error": probe.get("error")})
-        text = probe["text"].lower()
-        probes = {
-            "http_status": probe["status"],
-            "jsonld": ("application/ld+json" in text or "application/ld+json" in probe["text"].lower())
-            and '"event"' in text,
-            "rss": ("<rss" in text[:500]) or ("<feed" in text[:500]),
-            "ics": "begin:vcalendar" in text[:2000],
-            "list_html": any(sel in text for sel in ("<article", 'class="event', "calendar")),
-        }
-        suggested = (
-            "jsonld"
-            if probes["jsonld"]
-            else "ics"
-            if probes["ics"]
-            else "rss"
-            if probes["rss"]
-            else "html_list"
-            if probes["list_html"]
-            else None
-        )
+        probes, suggested = _probe_signals(probe["text"], probe["status"])
         return json.dumps(
             {"ok": True, "url": args.get("url", ""), "probes": probes, "suggested_connector": suggested}
         )
+    if args.get("action") == "register":
+        return _register_source(args, rt)
+    if args.get("action") == "forget":
+        sid = str(args.get("source_id", "") or "")
+        remaining = [s for s in user if s.get("id") != sid]
+        ingest_runner.write_user_sources(rt, remaining)
+        return json.dumps({"ok": True, "forgotten": sid, "remaining_user_sources": len(remaining)})
     try:
-        last = json.loads(_store(rt).kv_get("last_refresh") or "{}")
+        last = json.loads(store.kv_get("last_refresh") or "{}")
     except json.JSONDecodeError:
         last = {}
     return json.dumps(
@@ -295,12 +335,156 @@ def events_sources(args: dict, rt=None, **kwargs) -> str:
                     "connector": s.get("connector"),
                     "enabled": s.get("enabled", True),
                     "tags": s.get("tags", []),
+                    "via": s.get("via", "shipped"),
                     "last_refresh": last.get(s.get("id")),
                 }
                 for s in sources
             ],
         }
     )
+
+
+def _probe_signals(text: str, status: int) -> tuple[dict, str | None]:
+    t = text.lower()
+    probes = {
+        "http_status": status,
+        "jsonld": "application/ld+json" in t and '"event"' in t,
+        "rss": ("<rss" in text[:500]) or ("<feed" in text[:500]),
+        "ics": "begin:vcalendar" in text[:2000],
+        "list_html": any(sel in t for sel in ("<article", 'class="event', "calendar")),
+    }
+    suggested = (
+        "jsonld"
+        if probes["jsonld"]
+        else "ics"
+        if probes["ics"]
+        else "rss"
+        if probes["rss"]
+        else "html_list"
+        if probes["list_html"]
+        else None
+    )
+    return probes, suggested
+
+
+def _register_source(args: dict, rt) -> str:
+    url = str(args.get("url", "") or "").strip()
+    if not url.startswith(("http://", "https://")):
+        return json.dumps({"ok": False, "error": "url must be http(s)"})
+    probe = safe_probe(url)
+    if not probe.get("ok") and "resolve" in str(probe.get("error", "")):
+        # DNS failure = bogus host; bot walls (403/429/timeout) may still
+        # register — Hermes fetches those via its browser tools.
+        return json.dumps({"ok": False, "error": f"url rejected: {probe.get('error')}"})
+    sid = str(args.get("source_id", "") or "").strip() or f"user_{abs(hash(url)) % 10**8:08d}"
+    suggested = _probe_signals(probe["text"], probe["status"])[1] if probe.get("ok") else None
+    entry = {
+        "id": sid,
+        "name": str(args.get("name") or sid),
+        "url": url,
+        "connector": str(args.get("connector") or suggested or "html_list"),
+        "cadence_hours": float(args.get("cadence_hours", 24)),
+        "enabled": True,
+        "via": "http" if probe.get("ok") else "browser",
+        "tags": list(args.get("tags") or ["user"]),
+    }
+    user = [s for s in ingest_runner.load_user_sources(rt) if s.get("id") != sid]
+    user.append(entry)
+    ingest_runner.write_user_sources(rt, user)
+    return json.dumps(
+        {
+            "ok": True,
+            "registered": entry,
+            "probe_ok": bool(probe.get("ok")),
+            "next": "run events_refresh to pull this source",
+        }
+    )
+
+
+def events_ingest_content(args: dict, rt=None, **kwargs) -> str:
+    """Agent-fetched content (web_extract / browser_exec) enters the SAME
+    pipeline as scraped content: connector parse → effort → suitability →
+    dedup → store. The plugin never fetches; it only parses what Hermes hands it."""
+    store = _store(rt)
+    url = str(args.get("url", "") or "").strip()
+    content = str(args.get("content", "") or "")
+    source_id = str(args.get("source_id", "") or "").strip() or "agent"
+    if not content.strip():
+        return json.dumps(
+            {"ok": False, "error": "content is empty — paste the fetched page, JSON-LD, or ICS text"}
+        )
+    if url:
+        probe = safe_probe(url)
+        if not probe.get("ok"):
+            return json.dumps({"ok": False, "error": f"url rejected: {probe.get('error')}"})
+    fmt = str(args.get("format", "auto") or "auto").lower()
+    cfg = {"id": source_id, "url": url}
+    cfg.update(args.get("selectors") or {})
+    events, venues = _parse_content(content, fmt, cfg)
+    if not events:
+        return json.dumps(
+            {
+                "ok": False,
+                "error": "no events found in content — try format=jsonld|html|ics|rss or pass selectors",
+            }
+        )
+    for ev in events:
+        for p in ev.provenance:
+            p.setdefault("method", "agent-browser")
+            if url and not p.get("source_url"):
+                p["source_url"] = url
+    for v in venues:
+        store.upsert_venue(v)
+    from core.llm import make_llm_fn
+
+    llm = make_llm_fn(rt) if rt.get_setting("llm_suitability", True) else None
+    ingest_runner.prepare(events, store, llm)
+    merged = dedupe(events)
+    new_count = ingest_runner.store_merged(store, merged)
+    return json.dumps(
+        {
+            "ok": True,
+            "source_id": source_id,
+            "parsed": len(events),
+            "after_dedup": len(merged),
+            "new_events": new_count,
+            "venues_upserted": len(venues),
+            "hint": "these events now rank like any other; refresh may re-fetch the canonical copy",
+        }
+    )
+
+
+def _parse_content(content: str, fmt: str, cfg: dict):
+    from ingest.html_list import HtmlListConnector, TacomaWeeklyConnector
+    from ingest.rss_ics import IcsConnector, RssConnector
+    from ingest.schemaorg import JsonLdConnector
+
+    head = content.lstrip()[:300].lower()
+    if fmt == "ics":
+        chain = [IcsConnector]
+    elif fmt == "rss":
+        chain = [RssConnector]
+    elif fmt == "jsonld":
+        chain = [JsonLdConnector, HtmlListConnector]
+    elif fmt == "html":
+        chain = [HtmlListConnector, JsonLdConnector]
+    elif head.startswith("begin:vcalendar"):
+        chain = [IcsConnector]
+    elif head.startswith(("<rss", "<feed", "<?xml")):
+        chain = [RssConnector]
+    elif "application/ld+json" in head or '"@type"' in content[:8000].lower():
+        chain = [JsonLdConnector, HtmlListConnector]
+    else:
+        chain = [HtmlListConnector, JsonLdConnector, TacomaWeeklyConnector]
+    for cls in chain:
+        conn = cls()
+        try:
+            events = conn.parse(content, cfg)
+        except Exception:
+            continue
+        if events:
+            return events, list(conn.fetched_venues)
+    return [], []
 
 
 def events_share(args: dict, rt=None, **kwargs) -> str:
@@ -411,8 +595,10 @@ HANDLERS = {
     "events_search": events_search,
     "events_digest": events_digest,
     "events_feedback": events_feedback,
+    "events_conditions": events_conditions,
     "events_calendar_ics": events_calendar_ics,
     "events_ingest_email": events_ingest_email,
+    "events_ingest_content": events_ingest_content,
     "events_sources": events_sources,
     "events_share": events_share,
     "events_import_locations": events_import_locations,

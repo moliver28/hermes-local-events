@@ -107,6 +107,54 @@ SCHEMAS = {
             "required": ["event_ids"],
         },
     },
+    "events_conditions": {
+        "name": "events_conditions",
+        "description": (
+            "Best-effort conditions for one event: rain % at start (Open-Meteo), US AQI / "
+            "wildfire smoke (Open-Meteo air quality), and active NWS alerts. Each field is "
+            "None when unavailable (offline-safe). Use for morning-of checks and outdoor picks."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "event_ref": {"type": "string", "description": "Event id or digest pick number."},
+            },
+            "required": ["event_ref"],
+        },
+    },
+    "events_ingest_content": {
+        "name": "events_ingest_content",
+        "description": (
+            "Ingest page content YOU fetched (web_extract, browser_exec, or pasted text) so "
+            "agent-found events enter the same pipeline as scraped ones. Pass the raw HTML, "
+            "JSON-LD, ICS, or RSS text plus its source URL. Never fetch through this tool — "
+            "fetch with your web tools first, then hand the body here."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "content": {"type": "string", "description": "Raw page body / JSON-LD / ICS / RSS text."},
+                "url": {
+                    "type": "string",
+                    "description": "Source URL the content came from (http/s, public).",
+                },
+                "source_id": {
+                    "type": "string",
+                    "description": "Stable source label; defaults to 'agent'. Use the registered source id when known.",
+                },
+                "format": {
+                    "type": "string",
+                    "enum": ["auto", "jsonld", "html", "ics", "rss"],
+                    "description": "Default auto-detects.",
+                },
+                "selectors": {
+                    "type": "object",
+                    "description": "Optional html_list selector overrides: item, title, link, date, description, venue_name, venue_type, category.",
+                },
+            },
+            "required": ["content"],
+        },
+    },
     "events_ingest_email": {
         "name": "events_ingest_email",
         "description": (
@@ -129,14 +177,38 @@ SCHEMAS = {
     },
     "events_sources": {
         "name": "events_sources",
-        "description": "List configured sources (id, name, connector, enabled, last refresh) or validate a candidate source URL.",
+        "description": (
+            "List configured sources (shipped + user-registered), validate a candidate URL, "
+            "register a discovered source (onboarding/source discovery), or forget one. "
+            "register: JS-walled sites may fail the plain probe but still register with via=browser."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
-                "action": {"type": "string", "enum": ["list", "validate"], "description": "Default list."},
+                "action": {
+                    "type": "string",
+                    "enum": ["list", "validate", "register", "forget"],
+                    "description": "Default list.",
+                },
                 "url": {
                     "type": "string",
-                    "description": "validate: probe a URL for JSON-LD/RSS/ICS/list-HTML.",
+                    "description": "validate/register: the source URL (http/s, public host).",
+                },
+                "source_id": {
+                    "type": "string",
+                    "description": "register/forget: stable id; register derives one from the URL when omitted.",
+                },
+                "name": {"type": "string", "description": "register: display name."},
+                "connector": {
+                    "type": "string",
+                    "enum": ["rss", "ics", "jsonld", "html_list", "tacomaweekly", "ticketmaster"],
+                    "description": "register: override; default is auto-suggested from the probe.",
+                },
+                "cadence_hours": {"type": "number", "description": "register: refresh cadence (default 24)."},
+                "tags": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "register: tags (default ['user']).",
                 },
             },
         },

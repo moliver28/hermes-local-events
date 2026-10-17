@@ -10,6 +10,7 @@ import random
 from datetime import datetime, timedelta
 
 from .effort import effort_summary
+from .geo import conditions_line as conditions_line_of
 from .models import Energy, Event, Household, Party, Suitability, now_utc
 from .rank import Query, Scored, rank, select_slate
 from .rerank import rerank_slate
@@ -21,6 +22,8 @@ BAND_SECTIONS = [
     (Energy.ADVENTUROUS, "⛰ Adventure"),
     (Energy.ESCAPE, "🚗 Escape (book soon)"),
 ]
+
+ENERGY_BY_LABEL = {label: e.value for e, label in BAND_SECTIONS}
 
 AUDIENCE_COPY = {
     Suitability.UNKNOWN: "dog policy not stated — assume no",
@@ -58,6 +61,7 @@ def build_digest(
     anchors_per_band: int = 1,
     alternates: int = 2,
     llm=None,
+    conditions_fn=None,
 ) -> dict:
     now = now or now_utc()
     start, end = window or digest_window(now)
@@ -69,7 +73,9 @@ def build_digest(
         sections = {"adults": slate}
         if llm is not None:
             sections = rerank_slate(sections, llm, random.Random(start.date().isoformat()))
-        return _render(sections, hh, start, end, now, excluded=scored, party=party)
+        return _render(
+            sections, hh, start, end, now, excluded=scored, party=party, conditions_fn=conditions_fn
+        )
 
     sections: dict[str, list[Scored]] = {}
     all_scored: list[Scored] = []
@@ -93,7 +99,9 @@ def build_digest(
         sections = rerank_slate(sections, llm, random.Random(start.date().isoformat()))
 
     unknown_kid = sum(1 for e in events if e.kid == Suitability.UNKNOWN)
-    return _render(sections, hh, start, end, now, excluded_unknown=unknown_kid, party=party)
+    return _render(
+        sections, hh, start, end, now, excluded_unknown=unknown_kid, party=party, conditions_fn=conditions_fn
+    )
 
 
 def _render(
@@ -105,6 +113,7 @@ def _render(
     excluded=None,
     excluded_unknown: int = 0,
     party: Party = Party.FAMILY,
+    conditions_fn=None,
 ) -> dict:
     lines = [
         f"📅 **Weekend plan — {start:%a %b %d}–{end:%a %b %d}**",
@@ -121,13 +130,30 @@ def _render(
         for s in slate:
             n += 1
             ev = s.event
-            numbered.append({"n": n, "event_id": ev.id, "title": ev.title, "band": label})
+            numbered.append(
+                {
+                    "n": n,
+                    "event_id": ev.id,
+                    "title": ev.title,
+                    "band": label,
+                    "energy": ENERGY_BY_LABEL.get(label),
+                }
+            )
             lines.append(f"{n}. **{ev.title}** — {_when(ev)}")
             lines.append(f"   {effort_summary(ev, s.computed)} · {suitability_copy(ev)}")
             if s.reasons:
                 lines.append(f"   _why: {', '.join(s.reasons)}_")
             if ev.effort.indoor_outdoor == "outdoor":
                 lines.append("   ☔ rain swap: see alternates / indoor picks above")
+                cond = None
+                if conditions_fn is not None:
+                    try:
+                        cond = conditions_fn(ev, s)
+                    except Exception:
+                        cond = None
+                cond_line = conditions_line_of(cond)
+                if cond_line:
+                    lines.append(f"   {cond_line}")
             lines.append("")
     if n == 0:
         lines.append("_No events in the window yet — run events_refresh first (or widen the window)._")

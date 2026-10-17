@@ -232,7 +232,23 @@ def rank(events: list[Event], q: Query, hh: Household, store: Store) -> list[Sco
         seen_cats[ev.category] = seen_cats.get(ev.category, 0) + 1
         eligible.append(s)
     eligible.sort(key=lambda s: -s.score)
+    _annotate_flaky_organizers(eligible, store)
     return eligible
+
+
+def _annotate_flaky_organizers(scored: list[Scored], store: Store) -> None:
+    """Honesty, not scoring: organizers with a bad cancellation record get a
+    warning reason (never a score change — the catalog, not the ranker, judges)."""
+    if not any(s.event.organizer for s in scored):
+        return
+    from .trends import flaky_organizers
+
+    flaky = flaky_organizers(store)
+    if not flaky:
+        return
+    for s in scored:
+        if s.event.organizer in flaky and len(s.reasons) < 3:
+            s.reasons.append("organizer has cancellations — double-check")
 
 
 def select_slate(scored: list[Scored], k: int, per_day_cap: int = 1) -> list[Scored]:
@@ -303,13 +319,17 @@ def _semantic_sim(a: Scored, b: Scored) -> float:
 
 
 WILDCARD_TOP = 3
+WILDCARD_TREND_BOOST = 0.10
 
 
-def wildcard_pick(scored: list[Scored], hh: Household, seed: str) -> Scored | None:
+def wildcard_pick(
+    scored: list[Scored], hh: Household, seed: str, trends: dict | None = None
+) -> Scored | None:
     """The one labeled exploration slot, ranked 4+ so it never displaces the
     honest top-3. Selection is a Thompson draw over the facet posteriors
-    (instead of the lower bound), so high-uncertainty options sometimes win.
-    Search only — the digest never calls this."""
+    (instead of the lower bound), so high-uncertainty options sometimes win;
+    catalog supply trends add a bounded boost here and ONLY here — the exploit
+    score never reads trends. Search only — the digest never calls this."""
     if len(scored) <= WILDCARD_TOP:
         return None
     rng = random.Random(seed)
@@ -319,9 +339,14 @@ def wildcard_pick(scored: list[Scored], hh: Household, seed: str) -> Scored | No
             s.event, s.computed.effort_band, P.price_band_for(s.event), P.timeslot_for(s.event)
         )
         draw = P.thompson_sample(hh, keys, rng) + 0.08 * P.momentum_for(hh, s.event.category)
+        if trends:
+            ratio = trends.get(s.event.category)
+            if ratio is not None:
+                draw += WILDCARD_TREND_BOOST * max(-1.0, min(1.0, float(ratio) - 1.0))
         if draw > best_draw:
             best, best_draw = s, draw
     if best is None:
         return None
-    best.reasons = ["wildcard — exploring outside your usual", *best.reasons][:3]
+    label = "wildcard — trending in your area" if trends else "wildcard — exploring outside your usual"
+    best.reasons = [label, *best.reasons][:3]
     return best

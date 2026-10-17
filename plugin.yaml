@@ -111,3 +111,4 @@ python_dependencies:
   - dateparser>=1.2,<2
   - geopy>=2.4,<3
   - PyYAML>=6.0,<7
+  - recurring-ical-events>=3.8,<4

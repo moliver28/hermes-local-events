@@ -26,15 +26,24 @@ Write answers to `drive_tolerance`/`duration_tolerance` in the household profile
 
 ## 3. Source discovery (any region — this is what makes the plugin portable)
 
-Tell the user: "I'll find local event sources for your area."
+Tell the user: "I'll find local event sources for your area." You are the scraper here — your web tools are first-class parts of this pipeline.
 
-1. Probe the **national platforms** first with `events_sources action=validate`:
-   - Ticketmaster Discovery (needs free key — ask if they want it; skip gracefully otherwise)
-   - AllEvents.in city feed (`https://allevents.in/<city>/rss`)
-2. **Library platforms** — most US libraries run BiblioCommons, Communico, or Evanced; search the web for "<county> library events" and validate the calendar URL (validate reports `suggested_connector`).
-3. **Local outlets** — web-search "[city] events this weekend", "[city] family calendar", "[city] parks events", "[city] weekly newspaper events"; validate each candidate URL.
-4. Only add sources that validate. Add each to `data/sources.yaml` in the same shape as the shipped South Sound set (id, name, connector, url, cadence_hours, defaults). Family-by-construction sources (ParentMap-style) get `defaults: {kid: verified_yes}`.
-5. Run `events_refresh` and show the count honestly ("found 214 events from 7 sources").
+### 3a. Discover with your web tools
+
+1. `web_search` a battery of region queries: "[city] family events calendar", "[county] library events", "[city] parks & recreation activities", "[city] events this weekend", "[city] weekly newspaper events", "[city] museum events calendar".
+2. For each promising hit, `web_extract` the page (fast, cheap). Look for the signal vocabulary: `application/ld+json` with `"@type": "Event"`, RSS/Atom feeds, `BEGIN:VCALENDAR` / `.ics` links, or list-shaped HTML (article/.event/li calendars).
+3. **JS-heavy calendars** (ActiveNet, Localist widgets, Communico) that return shells or 403/429/bot walls to raw fetch: route through `browser_exec` (and the blocked-page-recovery pattern) to render and read the list. If a portal needs a login, it happens **only inside your browser with the host vault, with the user present for 2FA** — never ask for or handle their password, never store credentials.
+4. Probe what you found with `events_sources action=validate` when the URL answers plain HTTP — it reports the `suggested_connector`. Skip validation for browser-only sources; register them directly.
+
+### 3b. Register what you found
+
+`events_sources action=register {url, name, source_id?, connector?, cadence_hours?}` — user-registered sources live in the plugin's data dir (the shipped South Sound set stays untouched) and merge into every refresh. Ticketmaster Discovery needs a free key — ask; skip gracefully otherwise. Family-by-construction sites (ParentMap-style) are worth hunting specifically.
+
+### 3c. First pull + one-time backfill
+
+1. `events_refresh` — show the count honestly ("found 214 events from 7 sources").
+2. For any source that errored or looks JS-rendered: fetch it yourself (`web_extract` → `browser_exec` fallback) and feed the body through `events_ingest_content {source_id, url, content, format?}` — those events rank identically. Tell the user which sources are "browser-fed".
+3. If a browser-fed source worked well, say they can keep it that way; the register entry with `via: browser` marks the path.
 
 ## 4. Google Timeline import (optional, opt-in — never infer)
 

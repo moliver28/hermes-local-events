@@ -145,6 +145,7 @@ class Feedback(BaseModel):
     signal: str  # interested | not_interested | went | dismissed | too_far | too_pricey | too_much_effort
     effort_match: str | None = None  # right_effort | too_much | too_little
     mood: str | None = None  # Energy at decision time
+    band: str | None = None  # digest band energy when feedback references a pick ("tired", ...)
     note: str = ""
 
     @property
@@ -174,6 +175,8 @@ class Household(BaseModel):
     )
     facet_alpha: dict[str, float] = Field(default_factory=dict)
     facet_beta: dict[str, float] = Field(default_factory=dict)
+    # ISO timestamps parallel to facet keys; evidence decays toward the prior
+    facet_ts: dict[str, str] = Field(default_factory=dict)
     category_momentum: dict[str, float] = Field(default_factory=dict)
     # ISO timestamps parallel to category_momentum keys; decay is by elapsed time
     category_momentum_ts: dict[str, str] = Field(default_factory=dict)

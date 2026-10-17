@@ -1,12 +1,13 @@
 """Entity resolution, right-sized: deterministic blocking + fuzzy title match.
 Blocking key = (date ±1d, geohash-ish cell, title token). RapidFuzz for text.
 No Splink — at ≤2k live events the blocks resolve nearly all duplicates and a
-human can audit weekly."""
+human can audit weekly. A post-pass links recurring occurrences into series."""
 
 from __future__ import annotations
 
 import re
 from datetime import timedelta
+from uuid import uuid4
 
 from rapidfuzz import fuzz
 
@@ -94,8 +95,28 @@ def dedupe(events: list[Event]) -> list[Event]:
             merged.append(events[members[0]])
         else:
             merged.append(_merge([events[m] for m in members]))
+    link_series(merged)
     merged.sort(key=lambda e: e.start or events[0].start)
     return merged
+
+
+def link_series(merged: list[Event]) -> None:
+    """Same normalized title + same known venue on ≥2 distinct days = a
+    recurring series (farmers market, weekly meet). Assign a shared series_id
+    so trends can tell series from one-offs. Never links on unknown venue —
+    "Story Time" at two libraries must not become one series. Events that
+    already carry series_id (ICS RRULE expansion) are left alone."""
+    groups: dict[tuple, list[Event]] = {}
+    for e in merged:
+        if e.series_id or not e.venue_id:
+            continue
+        groups.setdefault((norm_title(e.title), e.venue_id), []).append(e)
+    for members in groups.values():
+        days = {m.start.date() for m in members if m.start}
+        if len(members) >= 2 and len(days) >= 2:
+            sid = f"ser_{uuid4().hex[:10]}"
+            for m in members:
+                m.series_id = sid
 
 
 def _coords(e: Event) -> list[tuple[float | None, float | None]]:

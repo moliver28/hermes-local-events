@@ -36,7 +36,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS events_fts USING fts5(
   id UNINDEXED, title, description, tokenize='porter unicode61'
 );
 CREATE TABLE IF NOT EXISTS feedback (
-  ts TEXT, event_id TEXT, signal TEXT, effort_match TEXT, mood TEXT, note TEXT DEFAULT ''
+  ts TEXT, event_id TEXT, signal TEXT, effort_match TEXT, mood TEXT, band TEXT, note TEXT DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT);
 CREATE TABLE IF NOT EXISTS visits_agg (
@@ -56,6 +56,12 @@ class Store:
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.executescript(SCHEMA)
         self.conn.commit()
+        # lightweight migration: stores created before the band column
+        try:
+            self.conn.execute("ALTER TABLE feedback ADD COLUMN band TEXT")
+            self.conn.commit()
+        except sqlite3.OperationalError:
+            pass  # column already exists
 
     # ------------------------------------------------------------------ kv
     def kv_get(self, key: str) -> str | None:
@@ -217,8 +223,8 @@ class Store:
     # ------------------------------------------------------------ feedback
     def add_feedback(self, fb: Feedback) -> None:
         self.conn.execute(
-            "INSERT INTO feedback(ts,event_id,signal,effort_match,mood,note) VALUES(?,?,?,?,?,?)",
-            (fb.ts, fb.event_id, fb.signal, fb.effort_match, fb.mood, fb.note),
+            "INSERT INTO feedback(ts,event_id,signal,effort_match,mood,band,note) VALUES(?,?,?,?,?,?,?)",
+            (fb.ts, fb.event_id, fb.signal, fb.effort_match, fb.mood, fb.band, fb.note),
         )
         self.conn.commit()
 

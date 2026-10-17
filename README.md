@@ -44,9 +44,11 @@ python cli.py stats
 
 | Capability | Tool |
 |---|---|
-| Polite multi-source refresh (ICS/RSS/JSON-LD/HTML, Ticketmaster API) | `events_refresh` |
-| Mood-aware search with kid/dog/party filters | `events_search` |
-| Plan-first Thursday digest by energy band | `events_digest` |
+| Polite multi-source refresh (ICS/RSS/JSON-LD/HTML, Ticketmaster API) + agent-fed sources | `events_refresh` |
+| Mood-aware search with kid/dog/party filters, wildcards, "more like this" | `events_search` |
+| Plan-first Thursday digest by energy band (rain/smoke line on outdoor picks) | `events_digest` |
+| Morning-of conditions: rain %, US AQI (smoke), NWS alerts | `events_conditions` |
+| Hermes-found pages enter the same pipeline (browser-fed events) | `events_ingest_content` |
 | Two-tap feedback that teaches ranker + tolerance curves | `events_feedback` |
 | Calendar handoff (ICS → Hermes Google Calendar skill) | `events_calendar_ics` |
 | Email mining: newsletters → candidates, receipts → attendance | `events_ingest_email` |
@@ -56,7 +58,8 @@ python cli.py stats
 
 ## Learning (right-sized, no ML infra)
 
-- **Beta-Binomial facet posteriors** (~100 lines of stdlib math) over category, venue, organizer, effort band, price band, time slot. `went` weighs 2, `interested` 1, negatives 1. Scores shrink to the prior below ~5 observations — no overfitting at family scale.
+- **Beta-Binomial facet posteriors** (~100 lines of stdlib math) over category, venue, organizer, effort band, price band, time slot. `went` weighs 2, `interested` 1, negatives 1. Scores shrink to the prior below ~5 observations, and **evidence forgets on a 120-day halflife** — old tastes fade honestly.
+- **Catalog trends, not feedback-mined trends**: recurring series (ICS RRULE expansion + title/venue linking) and per-category upcoming-supply shifts are mined once per refresh; they can win the labeled search wildcard (bounded +0.10 boost) but never touch the exploit score. Flaky organizers (≥30 % cancellations over ≥3 events) get an honest warning line.
 - **Tolerance curves per mood** (logistic acceptance over drive/duration) — tightened by "too far / too much", loosened by attendance past the center, and **seeded from your actual Google Timeline driving** if you opt in.
 - **Category momentum** decays with a 60-day halflife on real elapsed time — what you loved last summer fades honestly.
 - Trends are mined from the **event catalog** (supply, one-off vs recurring, organizer track record), not your sparse feedback log.

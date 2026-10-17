@@ -13,6 +13,7 @@ from .models import Event, Feedback, Household
 ALPHA0, BETA0 = 2.0, 3.0  # mild neutral prior
 SIGNAL_WEIGHTS = {"went": 2.0, "interested": 1.0}  # failures get 1.0
 MOMENTUM_HALFLIFE_DAYS = 60.0
+FACET_HALFLIFE_DAYS = 120.0  # slow forgetting: stale evidence shrinks toward the prior
 
 
 def facet_keys(
@@ -70,7 +71,8 @@ def posterior_lower_bound(alpha: float, beta: float) -> float:
     return max(0.0, mean - 1.96 * sd)
 
 
-def update_facets(hh: Household, keys: list[str], fb: Feedback) -> None:
+def update_facets(hh: Household, keys: list[str], fb: Feedback, when: datetime | None = None) -> None:
+    when = when or datetime.now(UTC)
     w = SIGNAL_WEIGHTS.get(fb.signal, 1.0)
     for k in keys:
         if fb.is_positive:
@@ -79,11 +81,30 @@ def update_facets(hh: Household, keys: list[str], fb: Feedback) -> None:
         else:
             hh.facet_alpha[k] = hh.facet_alpha.get(k, ALPHA0)
             hh.facet_beta[k] = hh.facet_beta.get(k, BETA0) + w
+        hh.facet_ts[k] = when.isoformat()
+
+
+def _decayed_facet(hh: Household, key: str, when: datetime | None = None) -> tuple[float, float]:
+    """Facet (α, β) decayed toward the prior at the 120-day evidence halflife.
+    Untimestamped keys (pre-decay-clock data) pass through undecayed."""
+    a = hh.facet_alpha.get(key, ALPHA0)
+    b = hh.facet_beta.get(key, BETA0)
+    ts = hh.facet_ts.get(key)
+    if ts and (a != ALPHA0 or b != BETA0):
+        try:
+            elapsed = max(
+                0.0, ((when or datetime.now(UTC)) - datetime.fromisoformat(ts)).total_seconds() / 86400.0
+            )
+        except ValueError:
+            return a, b
+        f = 0.5 ** (elapsed / FACET_HALFLIFE_DAYS)
+        a = ALPHA0 + (a - ALPHA0) * f
+        b = BETA0 + (b - BETA0) * f
+    return a, b
 
 
 def facet_score(hh: Household, key: str) -> float:
-    a = hh.facet_alpha.get(key, ALPHA0)
-    b = hh.facet_beta.get(key, BETA0)
+    a, b = _decayed_facet(hh, key)
     return posterior_lower_bound(a, b)
 
 
@@ -120,10 +141,11 @@ def momentum_for(hh: Household, category: str) -> float:
 
 def thompson_sample(hh: Household, keys: list[str], rng) -> float:
     """One posterior draw per facet, averaged — the exploration analogue of
-    facet_score's lower-bound mean. rng is a random.Random instance."""
+    facet_score's lower-bound mean. Uses decayed posteriors, so stale tastes
+    lose exploration priority too. rng is a random.Random instance."""
     if not keys:
         return rng.betavariate(ALPHA0, BETA0)
-    draws = [rng.betavariate(hh.facet_alpha.get(k, ALPHA0), hh.facet_beta.get(k, BETA0)) for k in keys]
+    draws = [rng.betavariate(*_decayed_facet(hh, k)) for k in keys]
     return sum(draws) / len(draws)
 
 

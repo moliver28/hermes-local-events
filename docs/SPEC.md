@@ -10,11 +10,11 @@ Rank local events by **P(family attends & is glad they went)** — not clicks, n
 
 | Research principle | Personal-scale implementation |
 |---|---|
-| Event **instances**, not series (price/time/status vary per occurrence) | `series_id` links recurrences; every instance ranks separately |
+| Event **instances**, not series (price/time/status vary per occurrence) | ICS RRULEs expand to instances sharing `series_id` (90-day horizon); non-ICS recurrences link via same title+venue on ≥2 days; every instance ranks separately |
 | Hard eligibility before learning | `rank.is_eligible`: status, window, kid/dog strictness, age_min, drive tolerance, overnight-per-mood |
 | Four-state suitability (`verified_yes/verified_no/likely/unknown`), unknown ≠ yes | `core/suitability.py` + evidence quotes required for `verified_*` |
 | Calibrated slate with diversity (MMR/DPP) | MMR-lite, λ=0.3 fixed, caps ≤2 per venue/organizer/day, 1 anchor/day |
-| Multi-channel retrieval | 6 connector types (ICS/RSS/JSON-LD/HTML/API/custom) via declarative `sources.yaml` |
+| Multi-channel retrieval | 6 connector types (ICS/RSS/JSON-LD/HTML/API/custom) via declarative `sources.yaml` + runtime `user_sources.yaml`; **agent-fetched content is first-class**: Hermes's `web_search`/`web_extract`/`browser_exec` feed `events_ingest_content`, which runs the identical parse → effort → suitability → dedup → store pipeline (`method="agent-browser"` provenance) |
 | Travel-tolerance survival curves | Logistic acceptance curves per mood; seeded from Google Timeline; updated by feedback |
 | Entity resolution with cannot-link semantics | Blocking (date±1d × geohash × title tokens) + RapidFuzz ≥0.85; different start times (>90 min) never merge |
 | Typed negative feedback | `too_far / too_pricey / too_much_effort / not_interested / dismissed` — each adjusts a specific model component |
