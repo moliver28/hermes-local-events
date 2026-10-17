@@ -25,6 +25,7 @@ provides_tools:
   - events_share
   - events_import_locations
   - events_forget_locations
+  - events_budget
 
 capabilities:
   - durable_storage
@@ -69,8 +70,18 @@ config_schema:
   - key: budget_per_outing
     type: number
     label: Comfortable budget per outing (USD)
-    description: Events costing more are deprioritized, not hidden.
+    description: Party total for a normal-mood outing. Mood budgets scale from it (tired 0.6×, adventurous 1.8×, escape 3×) and learn from 'too pricey' feedback.
     default: 60
+    required: false
+  - key: kid_free_under
+    type: number
+    label: Kids under this age enter free
+    default: 2
+    required: false
+  - key: kid_price_ratio
+    type: number
+    label: Kid price (fraction of adult price)
+    default: 0.5
     required: false
   - key: transport_mode
     type: string

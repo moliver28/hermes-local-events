@@ -47,6 +47,21 @@ SCHEMAS = {
                     "description": "Include kid-suitability-unknown events (default false).",
                 },
                 "free_only": {"type": "boolean", "description": "Only free events."},
+                "max_total": {
+                    "type": "number",
+                    "description": (
+                        "Hard cap on the party-total cost (per-person prices × your party, kid "
+                        "discounts applied). Events with unknown prices are excluded under a cap."
+                    ),
+                },
+                "budget": {
+                    "type": "number",
+                    "description": (
+                        "Override the budget center for this search (party total). Without it, the "
+                        "mood's budget applies: tired ≈ 0.6×, normal 1×, adventurous ≈ 1.8×, escape ≈ 3× "
+                        "the household baseline, rescaled by the last-two-weeks spend trend."
+                    ),
+                },
                 "max_results": {"type": "number", "description": "Default 10."},
             },
         },
@@ -212,6 +227,15 @@ SCHEMAS = {
                 },
             },
         },
+    },
+    "events_budget": {
+        "name": "events_budget",
+        "description": (
+            "Show the household money model: baseline per-outing budget, per-mood budgets "
+            "(wiped/solid/adventure/escape), kid pricing rules, and the rolling spend trend from "
+            "attended outings. 'too pricey' feedback tightens a mood's budget; splurges loosen it."
+        ),
+        "parameters": {"type": "object", "properties": {}},
     },
     "events_share": {
         "name": "events_share",

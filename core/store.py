@@ -248,6 +248,22 @@ class Store:
                 out.append((self.feedback_for(ev.id)[-1], ev))
         return out
 
+    def recent_attended(self, days: float = 14.0) -> list[Event]:
+        """Events with a 'went' signal inside the trailing window (spend trend)."""
+        from datetime import UTC, timedelta
+
+        cutoff = (datetime.now(UTC) - timedelta(days=days)).isoformat()
+        rows = self.conn.execute(
+            "SELECT DISTINCT event_id FROM feedback WHERE signal='went' AND ts >= ?",
+            (cutoff,),
+        ).fetchall()
+        out = []
+        for r in rows:
+            ev = self.get_event(r["event_id"])
+            if ev:
+                out.append(ev)
+        return out
+
     # --------------------------------------------------- location aggregates
     def upsert_visit(
         self, place_key: str, lat: float, lon: float, name: str = "", overnight: bool = False

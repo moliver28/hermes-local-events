@@ -164,7 +164,12 @@ class Household(BaseModel):
     has_dog: bool = False
     dog_size: str = "medium"
     transport_mode: str = "car"
-    budget_per_outing: float = 60.0
+    budget_per_outing: float = 60.0  # declared baseline, party total
+    # Learned absolute party-total budget per mood; empty = derived from the
+    # baseline via cost.MOOD_BUDGET_FACTORS. too_pricey tightens, splurges loosen.
+    budget_tolerance: dict[str, float] = Field(default_factory=dict)
+    kid_free_under: int = 2  # kids under this age enter free
+    kid_price_ratio: float = 0.5  # other kids pay this fraction of the adult price
     interests: list[str] = Field(default_factory=list)
     # Learned tolerance curves, per mood: logistic center (minutes / hours / dollars)
     drive_tolerance: dict[str, float] = Field(

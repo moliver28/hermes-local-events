@@ -47,6 +47,7 @@ python cli.py stats
 | Polite multi-source refresh (ICS/RSS/JSON-LD/HTML, Ticketmaster API) + agent-fed sources | `events_refresh` |
 | Mood-aware search with kid/dog/party filters, wildcards, "more like this" | `events_search` |
 | Plan-first Thursday digest by energy band (rain/smoke line on outdoor picks) | `events_digest` |
+| **Budgets & spend trend** — per-person + party-total pricing, mood budgets, `too_pricey` teaches | `events_budget` |
 | Morning-of conditions: rain %, US AQI (smoke), NWS alerts | `events_conditions` |
 | Hermes-found pages enter the same pipeline (browser-fed events) | `events_ingest_content` |
 | Two-tap feedback that teaches ranker + tolerance curves | `events_feedback` |
@@ -61,10 +62,11 @@ python cli.py stats
 - **Beta-Binomial facet posteriors** (~100 lines of stdlib math) over category, venue, organizer, effort band, price band, time slot. `went` weighs 2, `interested` 1, negatives 1. Scores shrink to the prior below ~5 observations, and **evidence forgets on a 120-day halflife** — old tastes fade honestly.
 - **Catalog trends, not feedback-mined trends**: recurring series (ICS RRULE expansion + title/venue linking) and per-category upcoming-supply shifts are mined once per refresh; they can win the labeled search wildcard (bounded +0.10 boost) but never touch the exploit score. Flaky organizers (≥30 % cancellations over ≥3 events) get an honest warning line.
 - **Tolerance curves per mood** (logistic acceptance over drive/duration) — tightened by "too far / too much", loosened by attendance past the center, and **seeded from your actual Google Timeline driving** if you opt in.
+- **Cost is first-class (the money twin of effort)**: per-person prices become party totals with kid discounts (under-N free, kid ratio); mood budgets scale from your baseline (tired 0.6× … escape 3×) with learned per-mood curves; a 14-day **spend trend** rescales them (splurgy stretch → leaner picks, frugal stretch → room for a treat). "too pricey" tightens, over-budget attendance loosens. An unstated price never counts as free, and only an explicit `max_total` hard-caps — mood budgets reorder, they don't hide.
 - **Category momentum** decays with a 60-day halflife on real elapsed time — what you loved last summer fades honestly.
 - Trends are mined from the **event catalog** (supply, one-off vs recurring, organizer track record), not your sparse feedback log.
 - The digest is pure exploitation; exploration is one labeled wildcard in search only, chosen by a Thompson draw over the facet posteriors (rank 4+, labeled "wildcard", deterministic per day). An optional LLM pass (`llm_rerank`, on by default) reorders digest picks **within** each energy band and writes the one-line reasons — it can never add, drop, or move picks across bands, and fails closed to the scored order.
-- Every pick shows its score components (preference / effort fit / freshness / novelty) — the scorer is its own explanation.
+- Every pick shows its score components (preference / effort fit / freshness / novelty / budget fit) — the scorer is its own explanation.
 - Optional `pip install "hermes-local-events[embeddings]"` adds semantic "more like this" search and similarity-aware slate diversity (model2vec, ~8 MB); without it everything runs unchanged.
 - `python cli.py replay` re-scores your feedback journal to regression-check weight changes (served-events-only bias, stated plainly).
 - Guardrail: dismiss rate > 15% alarms; weekly LLM-label audit detects prompt drift.

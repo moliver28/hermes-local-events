@@ -63,8 +63,6 @@ def test_all_unknown_starts_do_not_crash():
     """Regression: refresh crashed with NoneType < NoneType when the first
     merged event had no start time (e.g. ParentMap listicles without dates).
     Startless events must dedupe and sort last, not raise."""
-    from core.models import Event
-
     a = _ev("Family fun this weekend", None)
     b = _ev("Family fun this weekend", None, source="b")
     out = dedupe([a, b])

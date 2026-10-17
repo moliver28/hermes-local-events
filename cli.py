@@ -3,11 +3,13 @@
 
 python cli.py refresh [--source ID]
 python cli.py search [--energy tired|normal|adventurous|escape] [--party family|adults] [--days N] [--text Q]
+                   [--free-only] [--max-total USD] [--budget USD]
 python cli.py digest [--party family|adults]
 python cli.py feedback <event_ref> <signal> [--effort right_effort|too_much|too_little] [--mood M]
 python cli.py ics <event_id> [<event_id> ...]
 python cli.py import-locations <path> [--confirm]
 python cli.py sources [--validate URL]
+python cli.py budget
 python cli.py replay [--weights-a JSON] [--weights-b JSON]
 python cli.py stats
 """
@@ -37,6 +39,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--text", default="")
     p.add_argument("--free-only", action="store_true")
     p.add_argument("--max", type=int, default=10)
+    p.add_argument("--max-total", type=float, dest="max_total")
+    p.add_argument("--budget", type=float)
 
     p = sub.add_parser("digest")
     p.add_argument("--party", default="family")
@@ -59,10 +63,12 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("replay")
     p.add_argument(
-        "--weights-a", default='{"pref": 0.50, "effort_fit": 0.30, "freshness": 0.10, "novelty": 0.10}'
+        "--weights-a",
+        default='{"pref": 0.45, "effort_fit": 0.25, "freshness": 0.10, "novelty": 0.10, "cost_fit": 0.10}',
     )
     p.add_argument("--weights-b", dest="weights_b")
 
+    sub.add_parser("budget")
     sub.add_parser("stats")
 
     args = parser.parse_args(argv)
@@ -78,6 +84,8 @@ def main(argv: list[str] | None = None) -> int:
                 "query": args.text,
                 "free_only": args.free_only,
                 "max_results": args.max,
+                "max_total": args.max_total,
+                "budget": args.budget,
             },
             rt=rt,
         )
@@ -118,6 +126,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"weights must be JSON: {exc}")
             return 1
         out = json.dumps(eval_mod.replay(store, hh, wa, wb), indent=2)
+    elif args.cmd == "budget":
+        out = HANDLERS["events_budget"]({}, rt=rt)
     else:
         from core import feedback as fb
         from core.store import Store
