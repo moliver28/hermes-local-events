@@ -1,0 +1,112 @@
+# Curated South Sound starter set (verified Oct 2026; see docs/SOURCES.md).
+# Any region: onboarding's source-discovery writes entries in this same shape.
+# defaults: kid/dog suitability priors per source (verified_* requires the
+# source to be family/dog-by-construction — e.g. ParentMap lists family events only).
+
+- id: tacoma_public_library
+  name: Tacoma Public Library events
+  connector: ics
+  url: https://tacoma.bibliocommons.com/v2/events/rss?endDate=2027-12-31
+  cadence_hours: 12
+  defaults: {kid: verified_yes, dog: unknown}
+  tags: [library, free, family]
+
+- id: pierce_county_library
+  name: Pierce County Library events
+  connector: ics
+  url: https://calendar.piercecountylibrary.org/events/rss.xml
+  cadence_hours: 12
+  defaults: {kid: verified_yes, dog: unknown}
+  tags: [library, free, family]
+
+- id: parentmap
+  name: ParentMap calendar (family-by-construction)
+  connector: html_list
+  url: https://www.parentmap.com/calendar
+  item: ".calendar-item, article, .view-calendar .views-row"
+  date: auto
+  cadence_hours: 24
+  defaults: {kid: verified_yes, dog: unknown}
+  tags: [family, curated]
+
+- id: seattles_child
+  name: Seattle's Child calendar (kids-by-construction)
+  connector: html_list
+  url: https://www.seattleschild.com/calendar/
+  item: "article, .event-item"
+  date: auto
+  cadence_hours: 24
+  defaults: {kid: verified_yes, dog: unknown}
+  tags: [family, curated]
+
+- id: pdza
+  name: Point Defiance Zoo & Aquarium events
+  connector: jsonld
+  url: https://www.pdza.org/events/
+  venue_type: zoo
+  cadence_hours: 24
+  tags: [zoo, family, dog-events]
+
+- id: parks_tacoma
+  name: Parks Tacoma events
+  connector: html_list
+  url: https://www.metroparkstacoma.org/events/
+  item: ".event-item, article"
+  venue_name: Parks Tacoma venues
+  venue_type: park
+  cadence_hours: 24
+  defaults: {kid: likely, dog: unknown}
+  tags: [parks, family]
+
+- id: southsoundtalk
+  name: SouthSoundTalk things-to-do
+  connector: rss
+  url: https://southsoundtalk.com/category/things-to-do/feed/
+  cadence_hours: 24
+  tags: [local, blog]
+
+- id: tacomaweekly
+  name: Tacoma Weekly events digest page
+  connector: tacomaweekly
+  url: https://www.tacomaweekly.com/index216.htm
+  cadence_hours: 48
+  tags: [local, newspaper]
+
+- id: wa_state_parks
+  name: Washington State Parks events (first-day hikes, ranger programs)
+  connector: html_list
+  url: https://parks.wa.gov/NewsAndEvents/Calendar
+  item: ".calendar-event, article"
+  venue_type: park
+  cadence_hours: 72
+  enabled: false  # best-effort selector; validate before enabling
+  defaults: {dog: likely}
+  tags: [outdoors, escape]
+
+- id: wta_events
+  name: Washington Trails Association events/work parties
+  connector: html_list
+  url: https://www.wta.org/get-involved/events
+  item: ".event-listing, li.event"
+  venue_type: trailhead
+  cadence_hours: 72
+  enabled: false  # best-effort selector; validate before enabling
+  tags: [hiking, high-effort]
+
+# Requires optional API keys (set in plugin settings / env):
+- id: ticketmaster
+  name: Ticketmaster Discovery (concerts/sports)
+  connector: ticketmaster
+  latlong: "47.2529,-122.4443"
+  radius_miles: 30
+  cadence_hours: 24
+  enabled: true
+  tags: [ticketed]
+
+- id: allevents
+  name: AllEvents.in Tacoma
+  connector: rss
+  url: https://allevents.in/tacoma/rss
+  cadence_hours: 24
+  enabled: false  # verify feed + ToS fit for your use before enabling
+  tags: [aggregator]

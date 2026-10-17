@@ -1,0 +1,78 @@
+# Taxonomy + effort keyword tables. Pure data: tune without touching code.
+
+categories:
+  library: [story_time, book_club, author, STEM_kids]
+  parks_outdoors: [playground, hike, nature_walk, garden, festival, sports]
+  museums: [art, science, history, kids_museum]
+  zoo_aquarium: [animals, seasonal_event]
+  music: [concert, kids_music, open_mic]
+  food_drink: [market, tasting, food_truck, brewery]
+  performing_arts: [theater, comedy, dance]
+  community: [fair, parade, fundraiser, workshop]
+  sports: [spectator, participatory]
+  screen: [movie, outdoor_movie]
+  other: []
+
+# physical intensity 0..1 by phrase, checked in order (first hit wins on title+description)
+intensity_keywords:
+  - {re: "story ?time|read-aloud|book club|author talk", v: 0.05}
+  - {re: "movie|screening|film", v: 0.08}
+  - {re: "tasting|wine|beer|brewgust|tea|coffee", v: 0.15}
+  - {re: "concert|recital|choir|symphony|jazz", v: 0.15}
+  - {re: "\\bworkshop\\b|\\bclass\\b|\\blecture\\b|\\bdemo\\b", v: 0.25}
+  - {re: "market|bazaar|vendor|craft fair", v: 0.35}
+  - {re: "stroll|walk(?:about)? (?:the|a)|open house|expo", v: 0.30}
+  - {re: "carnival|fair|festival|fest |celebration", v: 0.50}
+  - {re: "parade", v: 0.35}
+  - {re: "zoo|aquarium|garden", v: 0.45}
+  - {re: "playground|play space|sensory", v: 0.30}
+  - {re: "nature walk|guided hike|trail walk", v: 0.60}
+  - {re: "hike|trail run|backpack", v: 0.85}
+  - {re: "climb|kayak|paddle|bike ride|ride fit", v: 0.95}
+  - {re: "volleyball|soccer|softball|basketball|run|race|5k|10k", v: 0.85}
+
+# venue_type -> (intensity prior, indoor_outdoor)
+venue_type_priors:
+  library: [0.10, indoor]
+  museum: [0.30, indoor]
+  kids_museum: [0.40, indoor]
+  zoo: [0.50, mixed]
+  aquarium: [0.35, indoor]
+  park: [0.40, outdoor]
+  trailhead: [0.85, outdoor]
+  arena: [0.25, indoor]
+  theater: [0.10, indoor]
+  brewery: [0.20, indoor]
+  market: [0.35, mixed]
+  stadium: [0.30, mixed]
+  community_center: [0.30, indoor]
+  mall: [0.25, indoor]
+
+overnight_keywords: "overnight|camp(?:ing|out|site)?|lodge|cabin|weekend trip|hot springs retreat|retreat"
+stroller_keywords: "stroller(?:-| )?friendly|stroller walk|all-wheel stroller"
+adults_venue_types: [brewery, comedy_club, bar, winery, casino]
+adults_keywords:
+  - {re: "21\\s*\\+|21 and over|ages? 21", audience: verified_adult}
+  - {re: "18\\s*\\+|adults? only|no (?:kids|minors)|parents'? night out|date night", audience: verified_adult}
+  - {re: "all ages|family (?:friendly|event)|kids (?:welcome|free)", audience: all_ages}
+adults_categories: [brewery_tasting, comedy, bar]
+kid_positive_keywords: "kids? (?:welcome|friendly|free)|family (?:friendly|event|day)|all ages|for (?:the )?kids|children(?:'s)?"
+kid_negative_keywords: "adults? only|no (?:kids|children|minors)|21\\s*\\+|18\\s*\\+"
+dog_positive_keywords: "dogs? (?:welcome|allowed|friendly)|dog[- ]friendly|leashed dogs|pet[- ]friendly|pups? welcome|yappy hour|dog days"
+dog_negative_keywords: "no (?:dogs|pets)|not pet friendly|service animals? only"
+rain_swap_category:   # outdoor category -> preferred indoor fallback category
+  parks_outdoors: museums
+  zoo_aquarium: aquarium
+  market: library
+  sports: community
+
+band_thresholds: {low: 35, high: 65}  # effort_score <35 low, >65 high
+effort_weights:
+  drive: 0.30
+  duration: 0.20
+  intensity: 0.20
+  cost: 0.15
+  kid_logistics: 0.10
+  lead: 0.05
+
+price_bands: {free: 0, cheap: 20, moderate: 60, pricey: 1000000}

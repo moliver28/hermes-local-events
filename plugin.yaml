@@ -1,0 +1,107 @@
+name: local-events
+version: 0.1.0
+description: >-
+  Effort-first local event finder: aggregates family-friendly (and adults-only)
+  events from local sources, filters by kids and dog suitability, learns your
+  household's tastes and energy tolerance over time, and delivers a plan-first
+  weekend digest.
+author: moliver28
+homepage: https://github.com/moliver28/hermes-local-events
+license: MIT
+tags: [events, family, recommendations, south-sound]
+manifest_version: 2
+api_version: 1
+
+provides_tools:
+  - events_refresh
+  - events_search
+  - events_digest
+  - events_feedback
+  - events_calendar_ics
+  - events_ingest_email
+  - events_sources
+  - events_share
+  - events_import_locations
+  - events_forget_locations
+
+capabilities:
+  - durable_storage
+
+config_schema:
+  - key: home_label
+    type: string
+    label: Home base (label)
+    description: Free-text label for your home area, e.g. "North Tacoma"
+    default: ""
+    required: false
+  - key: home_lat
+    type: string
+    label: Home latitude
+    description: Decimal latitude of home (used for drive times). Leave blank to set during onboarding.
+    default: ""
+    required: false
+  - key: home_lon
+    type: string
+    label: Home longitude
+    description: Decimal longitude of home.
+    default: ""
+    required: false
+  - key: kid_ages
+    type: string
+    label: Kids' ages
+    description: Comma-separated ages, e.g. "3, 6". Empty means no kids filters.
+    default: ""
+    required: false
+  - key: has_dog
+    type: boolean
+    label: Dog in the family
+    description: Enables dog-suitability handling.
+    default: false
+    required: false
+  - key: dog_size
+    type: string
+    label: Dog size
+    description: small | medium | large (used against size-restricted events)
+    default: medium
+    required: false
+  - key: budget_per_outing
+    type: number
+    label: Comfortable budget per outing (USD)
+    description: Events costing more are deprioritized, not hidden.
+    default: 60
+    required: false
+  - key: transport_mode
+    type: string
+    label: Primary transport
+    description: car | transit | walk
+    default: car
+    required: false
+    choices: [car, transit, walk]
+  - key: max_drive_normal
+    type: number
+    label: Max one-way drive you'll normally accept (minutes)
+    default: 45
+    required: false
+  - key: digest_hour
+    type: number
+    label: Digest hour (0-23, local)
+    description: Thursday plan-first digest delivery hour.
+    default: 20
+    required: false
+  - key: llm_suitability
+    type: boolean
+    label: Use LLM for kid/dog/effort classification
+    description: When true, unknown suitability is classified via Hermes LLM with evidence quotes. Rules-only when false.
+    default: true
+    required: false
+
+python_dependencies:
+  - pydantic>=2.7,<3
+  - httpx>=0.27,<1
+  - selectolax>=0.3.21,<1
+  - feedparser>=6.0,<8
+  - icalendar>=6.0,<8
+  - rapidfuzz>=3.9,<4
+  - dateparser>=1.2,<2
+  - geopy>=2.4,<3
+  - PyYAML>=6.0,<7

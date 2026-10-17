@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+data/local/
+data/imports/
+*.db
+*.db-wal
+*.db-shm
+.env
+.mimosa/
+.omc/
+.token-optimizer/
+.zcode/
+*.egg-info/

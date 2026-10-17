@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install
+        run: pip install -e ".[dev]"
+      - name: Lint
+        run: ruff check .
+      - name: Test (offline)
+        run: pytest -q
+      - name: Plugin manifest sanity
+        run: |
+          python - <<'PY'
+          import yaml
+          m = yaml.safe_load(open("plugin.yaml", encoding="utf-8"))
+          assert m["manifest_version"] == 2 and m["api_version"] == 1
+          assert m["name"] == "local-events"
+          for t in m["provides_tools"]:
+              assert t.startswith("events_"), t
+          print("plugin.yaml OK:", len(m["provides_tools"]), "tools")
+          PY
